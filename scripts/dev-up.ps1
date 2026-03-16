@@ -1,0 +1,165 @@
+param(
+    [switch]$NoInstall,
+    [switch]$ForceReinstall,
+    [int]$TimeoutSeconds = 90
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$runDir = Join-Path $repoRoot '.run'
+New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+
+$backendDir = Join-Path $repoRoot 'backend'
+$agentDir = Join-Path $repoRoot 'agent'
+$frontendDir = Join-Path $repoRoot 'frontend'
+
+function Assert-CommandAvailable {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        throw "Missing required command: $Name"
+    }
+}
+
+function Ensure-Venv {
+    param(
+        [Parameter(Mandatory = $true)][string]$ServiceDir,
+        [Parameter(Mandatory = $true)][string]$RequirementsFile,
+        [switch]$SkipInstall,
+        [switch]$Reinstall
+    )
+
+    $venvPython = Join-Path $ServiceDir '.venv\Scripts\python.exe'
+    if (-not (Test-Path $venvPython)) {
+        Write-Host "Creating venv in $ServiceDir"
+        & python -m venv (Join-Path $ServiceDir '.venv') | Out-Null
+    }
+
+    if (-not $SkipInstall -or $Reinstall) {
+        Write-Host "Installing Python dependencies in $ServiceDir"
+        & $venvPython -m pip install -r $RequirementsFile | Out-Null
+    }
+
+    return $venvPython
+}
+
+function Ensure-FrontendDeps {
+    param(
+        [Parameter(Mandatory = $true)][string]$Dir,
+        [switch]$SkipInstall,
+        [switch]$Reinstall
+    )
+
+    $nodeModules = Join-Path $Dir 'node_modules'
+    if ($Reinstall -or (-not $SkipInstall -and -not (Test-Path $nodeModules))) {
+        Write-Host 'Installing frontend dependencies'
+        Push-Location $Dir
+        try {
+            & npm install
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+function Start-TrackedProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][string]$LogPrefix
+    )
+
+    $stdoutPath = Join-Path $runDir "$LogPrefix.out.log"
+    $stderrPath = Join-Path $runDir "$LogPrefix.err.log"
+
+    $process = Start-Process -FilePath $FilePath `
+        -ArgumentList $Arguments `
+        -WorkingDirectory $WorkingDirectory `
+        -RedirectStandardOutput $stdoutPath `
+        -RedirectStandardError $stderrPath `
+        -NoNewWindow `
+        -PassThru
+
+    Write-Host "Started $Name (PID: $($process.Id))"
+
+    [pscustomobject]@{
+        name = $Name
+        pid = $process.Id
+        stdout = $stdoutPath
+        stderr = $stderrPath
+    }
+}
+
+function Wait-ForHttp {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][int]$TimeoutSec
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 4 | Out-Null
+            return $true
+        }
+        catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+    return $false
+}
+
+Assert-CommandAvailable -Name 'python'
+Assert-CommandAvailable -Name 'npm'
+
+$backendPython = Ensure-Venv -ServiceDir $backendDir -RequirementsFile (Join-Path $backendDir 'requirements.txt') -SkipInstall:$NoInstall -Reinstall:$ForceReinstall
+$agentPython = Ensure-Venv -ServiceDir $agentDir -RequirementsFile (Join-Path $agentDir 'requirements.txt') -SkipInstall:$NoInstall -Reinstall:$ForceReinstall
+Ensure-FrontendDeps -Dir $frontendDir -SkipInstall:$NoInstall -Reinstall:$ForceReinstall
+
+$npmCommand = (Get-Command npm.cmd -ErrorAction SilentlyContinue)
+if ($null -eq $npmCommand) {
+    throw 'Could not resolve npm.cmd from PATH'
+}
+
+$processes = @()
+$processes += Start-TrackedProcess -Name 'backend' -FilePath $backendPython -Arguments @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--reload') -WorkingDirectory $backendDir -LogPrefix 'backend'
+$processes += Start-TrackedProcess -Name 'agent' -FilePath $agentPython -Arguments @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8010', '--reload') -WorkingDirectory $agentDir -LogPrefix 'agent'
+$processes += Start-TrackedProcess -Name 'frontend' -FilePath $npmCommand.Source -Arguments @('run', 'dev', '--', '--host', '127.0.0.1', '--port', '5173') -WorkingDirectory $frontendDir -LogPrefix 'frontend'
+
+$pidsPath = Join-Path $runDir 'pids.json'
+$processes | ConvertTo-Json | Set-Content -Path $pidsPath -Encoding UTF8
+
+$checks = @(
+    @{ name = 'backend'; url = 'http://127.0.0.1:8000/api/v1/health' },
+    @{ name = 'agent'; url = 'http://127.0.0.1:8010/health' },
+    @{ name = 'frontend'; url = 'http://127.0.0.1:5173/' }
+)
+
+$failed = @()
+foreach ($check in $checks) {
+    Write-Host "Waiting for $($check.name) -> $($check.url)"
+    if (-not (Wait-ForHttp -Url $check.url -TimeoutSec $TimeoutSeconds)) {
+        $failed += $check.name
+    }
+}
+
+if ($failed.Count -gt 0) {
+    Write-Host 'One or more services did not become healthy in time.' -ForegroundColor Yellow
+    Write-Host "Failed: $($failed -join ', ')"
+    Write-Host "See logs in $runDir"
+    exit 1
+}
+
+Write-Host ''
+Write-Host 'All services are running.' -ForegroundColor Green
+Write-Host 'Frontend: http://127.0.0.1:5173'
+Write-Host 'Backend health: http://127.0.0.1:8000/api/v1/health'
+Write-Host 'Agent health: http://127.0.0.1:8010/health'
+Write-Host "Logs and PIDs: $runDir"
+
+
