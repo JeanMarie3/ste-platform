@@ -27,15 +27,34 @@ export function Dashboard() {
 
   const selectedPlatforms = useMemo(() => ['web', 'api'] as Platform[], []);
 
-  const groupedRuns = useMemo(() => {
-    const buckets: Record<string, TestRun[]> = {};
+  // Lookup maps for relationship labels
+  const requirementById = useMemo(() => {
+    const m: Record<string, Requirement> = {};
+    for (const r of requirements) m[r.id] = r;
+    return m;
+  }, [requirements]);
+
+  const testCaseById = useMemo(() => {
+    const m: Record<string, TestCase> = {};
+    for (const tc of testCases) m[tc.id] = tc;
+    return m;
+  }, [testCases]);
+
+  const runsByTestCase = useMemo(() => {
+    const grouped: Array<{ testCaseId: string; runs: TestRun[] }> = [];
+    const indexByTestCaseId: Record<string, number> = {};
+
     for (const run of runs) {
-      if (!buckets[run.test_case_id]) {
-        buckets[run.test_case_id] = [];
+      const existingIndex = indexByTestCaseId[run.test_case_id];
+      if (existingIndex === undefined) {
+        indexByTestCaseId[run.test_case_id] = grouped.length;
+        grouped.push({ testCaseId: run.test_case_id, runs: [run] });
+      } else {
+        grouped[existingIndex].runs.push(run);
       }
-      buckets[run.test_case_id].push(run);
     }
-    return Object.entries(buckets);
+
+    return grouped;
   }, [runs]);
 
   const refresh = async () => {
@@ -186,11 +205,14 @@ export function Dashboard() {
       </Panel>
 
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+
+        {/* ── Requirements ────────────────────────────────── */}
         <Panel title="Requirements">
           {requirements.length === 0 ? <p>No requirements yet.</p> : requirements.map((item) => (
             <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
               <strong>{item.title}</strong>
-              <div style={{ margin: '6px 0' }}>{item.description}</div>
+              <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 4 }}>{item.id}</div>
+              <div style={{ margin: '4px 0' }}>{item.description}</div>
               <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
               <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
                 {busy === item.id ? 'Generating...' : 'Generate test cases'}
@@ -199,50 +221,92 @@ export function Dashboard() {
           ))}
         </Panel>
 
+        {/* ── Test Cases — each shows its parent Requirement ── */}
         <Panel title="Test Cases">
-          {testCases.length === 0 ? <p>No test cases yet.</p> : testCases.map((item) => (
-            <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
-              <strong>{item.title}</strong>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
-                <span>{item.platform} | {item.review_status}</span>
-                {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
-              </div>
-              <div style={{ margin: '6px 0' }}>{item.objective}</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {reviewStatuses.map((status) => (
-                  <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
-                    {status}
+          {testCases.length === 0 ? <p>No test cases yet.</p> : testCases.map((item) => {
+            const parentReq = requirementById[item.requirement_id];
+            return (
+              <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
+                {/* relationship breadcrumb */}
+                {parentReq && (
+                  <div style={{ fontSize: 11, color: '#1565c0', background: '#e8f4fd', borderRadius: 4, padding: '2px 6px', marginBottom: 6, display: 'inline-block' }}>
+                    ↳ {parentReq.title}
+                  </div>
+                )}
+                <div><strong>{item.title}</strong></div>
+                <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 2 }}>{item.id}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
+                  <span>{item.platform} | {item.review_status}</span>
+                  {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
+                </div>
+                <div style={{ margin: '4px 0' }}>{item.objective}</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                  {reviewStatuses.map((status) => (
+                    <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
+                      {status}
+                    </button>
+                  ))}
+                  <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
+                    {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
                   </button>
-                ))}
-                <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
-                  {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
-                </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </Panel>
 
+        {/* ── Executions — grouped by test case ── */}
         <Panel title="Executions">
-          {runs.length === 0 ? <p>No test runs yet.</p> : groupedRuns.map(([testCaseId, entries]) => (
-            <div key={testCaseId} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
-              <strong>{testCaseId}</strong>
-              <div style={{ fontSize: 12, color: '#5f6b7a', margin: '4px 0 8px' }}>{entries.length} run(s)</div>
-              {entries.map((item) => (
-                <details key={item.id} style={{ marginBottom: 8 }}>
-                  <summary>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</summary>
-                  <div style={{ margin: '6px 0' }}>{item.summary_reason}</div>
-                  <ul>
-                    {item.steps.map((step) => (
-                      <li key={`${item.id}-${step.step_number}`}>
-                        {step.action} {'->'} {step.verdict.status} ({step.verdict.reason})
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              ))}
-            </div>
-          ))}
+          {runs.length === 0 ? <p>No test runs yet.</p> : runsByTestCase.map((group) => {
+            const parentTC = testCaseById[group.testCaseId];
+            const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
+
+            return (
+              <div key={group.testCaseId} style={{ marginBottom: 20, paddingBottom: 12, borderBottom: '1px solid #d9e1ec' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                  Test case: {group.testCaseId} ({group.runs.length} run{group.runs.length > 1 ? 's' : ''})
+                </div>
+                {/* test case group breadcrumb */}
+                <div style={{ fontSize: 11, marginBottom: 8 }}>
+                  {parentReq && (
+                    <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
+                      {parentReq.title}
+                    </span>
+                  )}
+                  {parentTC && (
+                    <span style={{ background: '#edf7ed', color: '#2d7a3a', borderRadius: 4, padding: '1px 6px' }}>
+                      ↳ {parentTC.title}
+                    </span>
+                  )}
+                  {!parentTC && (
+                    <span style={{ background: '#fff3cd', color: '#8a6d3b', borderRadius: 4, padding: '1px 6px' }}>
+                      Missing test case details
+                    </span>
+                  )}
+                </div>
+
+                {group.runs.map((item) => (
+                  <div key={item.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #e3e8ef' }}>
+                    <div><strong>{item.id}</strong></div>
+                    <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
+                    <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
+                    <details>
+                      <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
+                      <ul>
+                        {item.steps.map((step) => (
+                          <li key={`${item.id}-${step.step_number}`}>
+                            {step.action} {'→'} {step.verdict.status} ({step.verdict.reason})
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </Panel>
+
       </div>
     </div>
   );
