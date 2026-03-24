@@ -18,6 +18,7 @@ export function Dashboard() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNote, setAiNote] = useState<string>('');
   const [form, setForm] = useState({
+    project_code: 'APP',
     title: 'Login requirement',
     description: 'User can log in successfully and reach the dashboard with the expected feature area visible.',
     priority: 'high',
@@ -122,6 +123,7 @@ export function Dashboard() {
         return;
       }
       setForm({
+        project_code: form.project_code,
         title: suggestion.title,
         description: suggestion.description,
         priority: suggestion.priority,
@@ -260,6 +262,12 @@ export function Dashboard() {
 
       <Panel title="Create Requirement">
         <form onSubmit={handleCreateRequirement} style={{ display: 'grid', gap: 12 }}>
+          <input
+            value={form.project_code}
+            placeholder="Project code (e.g. APP)"
+            required
+            onChange={(e) => setForm({ ...form, project_code: e.target.value.toUpperCase().replace(/\s+/g, '') })}
+          />
           <input value={form.title} placeholder="Requirement title" onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <textarea value={form.description} placeholder="Requirement description" rows={4} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           <div style={{ display: 'flex', gap: 12 }}>

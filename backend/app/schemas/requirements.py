@@ -7,6 +7,7 @@ from app.domain.enums import PlatformType
 
 
 class RequirementCreate(BaseModel):
+    project_code: str = Field(..., min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
     title: str = Field(..., min_length=3)
     description: str = Field(..., min_length=10)
     platforms: List[PlatformType]

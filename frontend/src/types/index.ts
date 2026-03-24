@@ -2,6 +2,7 @@ export type Platform = 'web' | 'api' | 'database' | 'mobile' | 'desktop';
 
 export interface Requirement {
   id: string;
+  project_code: string;
   title: string;
   description: string;
   platforms: Platform[];
@@ -56,4 +57,3 @@ export interface AISuggestion {
   risk: string;
   business_rules: string[];
 }
-

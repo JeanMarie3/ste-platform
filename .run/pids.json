@@ -1,19 +1,19 @@
 ﻿[
     {
         "name":  "backend",
-        "pid":  23756,
+        "pid":  29028,
         "stdout":  "C:\\Users\\Jean001\\source\\ste-platform\\.run\\backend.out.log",
         "stderr":  "C:\\Users\\Jean001\\source\\ste-platform\\.run\\backend.err.log"
     },
     {
         "name":  "agent",
-        "pid":  51204,
+        "pid":  18376,
         "stdout":  "C:\\Users\\Jean001\\source\\ste-platform\\.run\\agent.out.log",
         "stderr":  "C:\\Users\\Jean001\\source\\ste-platform\\.run\\agent.err.log"
     },
     {
         "name":  "frontend",
-        "pid":  50216,
+        "pid":  34504,
         "stdout":  "C:\\Users\\Jean001\\source\\ste-platform\\.run\\frontend.out.log",
         "stderr":  "C:\\Users\\Jean001\\source\\ste-platform\\.run\\frontend.err.log"
     }

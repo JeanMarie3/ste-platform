@@ -38,9 +38,25 @@ class RequirementRepository:
             row = connection.execute("SELECT * FROM requirements WHERE id = ?", (requirement_id,)).fetchone()
         return self._map(row) if row else None
 
+    def next_sequence_for_project(self, project_code: str) -> int:
+        prefix = f"REQ-{project_code.upper()}-"
+        with get_connection() as connection:
+            rows = connection.execute("SELECT id FROM requirements WHERE id LIKE ?", (f"{prefix}%",)).fetchall()
+
+        max_sequence = 0
+        for row in rows:
+            requirement_id = row["id"]
+            if not requirement_id.startswith(prefix):
+                continue
+            suffix = requirement_id[len(prefix):]
+            if suffix.isdigit():
+                max_sequence = max(max_sequence, int(suffix))
+        return max_sequence + 1
+
     def _map(self, row) -> RequirementRead:
         return RequirementRead(
             id=row["id"],
+            project_code=self._extract_project_code(row["id"]),
             title=row["title"],
             description=row["description"],
             platforms=loads_json(row["platforms_json"]),
@@ -51,6 +67,12 @@ class RequirementRepository:
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
+
+    def _extract_project_code(self, requirement_id: str) -> str:
+        parts = requirement_id.split("-")
+        if len(parts) >= 3 and parts[0] == "REQ":
+            return parts[1]
+        return "LEGACY"
 
 
 class TestCaseRepository:
