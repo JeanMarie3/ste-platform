@@ -74,6 +74,28 @@ export function Dashboard() {
     return grouped;
   }, [testCases]);
 
+  const requirementNumberById = useMemo(() => {
+    const labels: Record<string, string> = {};
+    const requirementIds = Array.from(new Set(testCases.map((tc) => tc.requirement_id))).sort();
+    requirementIds.forEach((requirementId, index) => {
+      labels[requirementId] = String(index + 1).padStart(4, '0');
+    });
+    return labels;
+  }, [testCases]);
+
+  const testCaseVersionById = useMemo(() => {
+    const labels: Record<string, string> = {};
+    testCasesByRequirement.forEach((group) => {
+      const tcNumber = requirementNumberById[group.requirementId] ?? '0000';
+      group.cases.forEach((testCase, caseIndex) => {
+        labels[testCase.id] = `TC-${tcNumber}-v${caseIndex + 1}`;
+      });
+    });
+    return labels;
+  }, [testCasesByRequirement, requirementNumberById]);
+
+  const getExecutionLabel = (index: number): string => `execution-${String(index + 1).padStart(2, '0')}`;
+
   const refresh = async () => {
     const [requirementsData, testCasesData, runsData] = await Promise.all([
       apiGet<Requirement[]>('/requirements'),
@@ -180,6 +202,39 @@ export function Dashboard() {
     }
   };
 
+  const runsByTC = useMemo(() => {
+    const tcGroupMap: Record<string, Array<{ tcVersion: string; runs: TestRun[] }>> = {};
+    
+    for (const group of runsByTestCase) {
+      const tcVersion = testCaseVersionById[group.testCaseId] ?? group.testCaseId;
+      // Extract base TC number (e.g., "TC-0001" from "TC-0001-v2")
+      const tcBaseMatch = tcVersion.match(/^(TC-\d+)/);
+      const tcBase = tcBaseMatch ? tcBaseMatch[1] : 'TC-0000';
+      
+      if (!tcGroupMap[tcBase]) {
+        tcGroupMap[tcBase] = [];
+      }
+      tcGroupMap[tcBase].push({ tcVersion, runs: group.runs });
+    }
+
+    // Sort each TC's versions by version number descending (latest first)
+    const sorted: Array<{ tcBase: string; versions: Array<{ tcVersion: string; runs: TestRun[] }> }> = [];
+    Object.keys(tcGroupMap)
+      .sort()
+      .forEach((tcBase) => {
+        sorted.push({
+          tcBase,
+          versions: tcGroupMap[tcBase].sort((a, b) => {
+            const aVer = parseInt(a.tcVersion.split('-v')[1] || '0', 10);
+            const bVer = parseInt(b.tcVersion.split('-v')[1] || '0', 10);
+            return bVer - aVer; // Descending
+          }),
+        });
+      });
+
+    return sorted;
+  }, [runsByTestCase, testCaseVersionById]);
+
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {error ? <div style={{ padding: 12, background: '#fdecec', border: '1px solid #f4b1b1', borderRadius: 8 }}>{error}</div> : null}
@@ -264,10 +319,10 @@ export function Dashboard() {
                     )}
                   </div>
 
-                  {group.cases.map((item) => (
+                  {[...group.cases].reverse().map((item) => (
                     <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
-                      <div><strong>{item.title}</strong></div>
-                      <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 2 }}>{item.id}</div>
+                      <div><strong>{testCaseVersionById[item.id] ?? 'TC-0000-v1'}</strong></div>
+                      <div style={{ fontSize: 12, color: '#6f7c8a', marginBottom: 2 }}>{item.title}</div>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
                         <span>{item.platform} | {item.review_status}</span>
                         {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
@@ -293,55 +348,64 @@ export function Dashboard() {
 
         {/* ── Executions — grouped by test case ── */}
         <Panel title="Executions">
-          {runs.length === 0 ? <p>No test runs yet.</p> : runsByTestCase.map((group) => {
-            const parentTC = testCaseById[group.testCaseId];
-            const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
-
+          {runs.length === 0 ? <p>No test runs yet.</p> : runsByTC.map((tcGroup) => {
             return (
-              <details key={group.testCaseId} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
+              <details key={tcGroup.tcBase} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
                 <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>
-                    Test case: {group.testCaseId} ({group.runs.length} run{group.runs.length > 1 ? 's' : ''})
-                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>{tcGroup.tcBase} ({tcGroup.versions.length} version{tcGroup.versions.length > 1 ? 's' : ''})</span>
                 </summary>
 
                 <div style={{ marginLeft: 40 }}>
-                  {/* test case group breadcrumb */}
-                  <div style={{ fontSize: 11, margin: '8px 0' }}>
-                    {parentReq && (
-                      <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
-                        {parentReq.title}
-                      </span>
-                    )}
-                    {parentTC && (
-                      <span style={{ background: '#edf7ed', color: '#2d7a3a', borderRadius: 4, padding: '1px 6px' }}>
-                        ↳ {parentTC.title}
-                      </span>
-                    )}
-                    {!parentTC && (
-                      <span style={{ background: '#fff3cd', color: '#8a6d3b', borderRadius: 4, padding: '1px 6px' }}>
-                        Missing test case details
-                      </span>
-                    )}
-                  </div>
+                  {tcGroup.versions.map((versionGroup) => {
+                    const parentTC = testCaseById[Object.entries(testCaseVersionById).find(([, label]) => label === versionGroup.tcVersion)?.[0] || ''];
+                    const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
 
-                  {group.runs.map((item) => (
-                    <div key={item.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #e3e8ef' }}>
-                      <div><strong>{item.id}</strong></div>
-                      <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
-                      <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
-                      <details>
-                        <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
-                        <ul>
-                          {item.steps.map((step) => (
-                            <li key={`${item.id}-${step.step_number}`}>
-                              {step.action} {'→'} {step.verdict.status} ({step.verdict.reason})
-                            </li>
+                    return (
+                      <details key={versionGroup.tcVersion} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
+                        <summary style={{ cursor: 'pointer', listStylePosition: 'inside', fontSize: 11 }}>
+                          <span style={{ fontWeight: 500 }}>
+                            {versionGroup.tcVersion} ({versionGroup.runs.length} run{versionGroup.runs.length > 1 ? 's' : ''})
+                          </span>
+                        </summary>
+
+                        <div style={{ marginLeft: 20 }}>
+                          {/* test case group breadcrumb */}
+                          {(parentReq || parentTC) && (
+                            <div style={{ fontSize: 11, margin: '8px 0' }}>
+                              {parentReq && (
+                                <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
+                                  {parentReq.title}
+                                </span>
+                              )}
+                              {parentTC && (
+                                <span style={{ background: '#edf7ed', color: '#2d7a3a', borderRadius: 4, padding: '1px 6px' }}>
+                                  ↳ {versionGroup.tcVersion}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {[...versionGroup.runs].reverse().map((item, runIndex) => (
+                            <div key={item.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #e3e8ef' }}>
+                              <div><strong>{getExecutionLabel(versionGroup.runs.length - runIndex - 1)}</strong></div>
+                              <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
+                              <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
+                              <details>
+                                <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
+                                <ul>
+                                  {item.steps.map((step) => (
+                                    <li key={`${item.id}-${step.step_number}`}>
+                                      {step.action} {'→'} {step.verdict.status} ({step.verdict.reason})
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </details>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </details>
             );
