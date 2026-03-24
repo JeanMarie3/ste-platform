@@ -57,6 +57,23 @@ export function Dashboard() {
     return grouped;
   }, [runs]);
 
+  const testCasesByRequirement = useMemo(() => {
+    const grouped: Array<{ requirementId: string; cases: TestCase[] }> = [];
+    const indexByRequirementId: Record<string, number> = {};
+
+    for (const tc of testCases) {
+      const existingIndex = indexByRequirementId[tc.requirement_id];
+      if (existingIndex === undefined) {
+        indexByRequirementId[tc.requirement_id] = grouped.length;
+        grouped.push({ requirementId: tc.requirement_id, cases: [tc] });
+      } else {
+        grouped[existingIndex].cases.push(tc);
+      }
+    }
+
+    return grouped;
+  }, [testCases]);
+
   const refresh = async () => {
     const [requirementsData, testCasesData, runsData] = await Promise.all([
       apiGet<Requirement[]>('/requirements'),
@@ -221,36 +238,55 @@ export function Dashboard() {
           ))}
         </Panel>
 
-        {/* ── Test Cases — each shows its parent Requirement ── */}
+        {/* ── Test Cases — grouped by Requirement ── */}
         <Panel title="Test Cases">
-          {testCases.length === 0 ? <p>No test cases yet.</p> : testCases.map((item) => {
-            const parentReq = requirementById[item.requirement_id];
+          {testCases.length === 0 ? <p>No test cases yet.</p> : testCasesByRequirement.map((group) => {
+            const parentReq = requirementById[group.requirementId];
+
             return (
-              <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
-                {/* relationship breadcrumb */}
-                {parentReq && (
-                  <div style={{ fontSize: 11, color: '#1565c0', background: '#e8f4fd', borderRadius: 4, padding: '2px 6px', marginBottom: 6, display: 'inline-block' }}>
-                    ↳ {parentReq.title}
+              <details key={group.requirementId} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
+                <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                    Requirement: {parentReq ? parentReq.title : `Missing requirement (${group.requirementId})`} ({group.cases.length} test case{group.cases.length > 1 ? 's' : ''})
+                  </span>
+                </summary>
+
+                <div style={{ marginLeft: 40 }}>
+                  <div style={{ fontSize: 11, margin: '8px 0' }}>
+                    {parentReq ? (
+                      <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px' }}>
+                        {group.requirementId}
+                      </span>
+                    ) : (
+                      <span style={{ background: '#fff3cd', color: '#8a6d3b', borderRadius: 4, padding: '1px 6px' }}>
+                        Requirement not found
+                      </span>
+                    )}
                   </div>
-                )}
-                <div><strong>{item.title}</strong></div>
-                <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 2 }}>{item.id}</div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
-                  <span>{item.platform} | {item.review_status}</span>
-                  {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
-                </div>
-                <div style={{ margin: '4px 0' }}>{item.objective}</div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                  {reviewStatuses.map((status) => (
-                    <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
-                      {status}
-                    </button>
+
+                  {group.cases.map((item) => (
+                    <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
+                      <div><strong>{item.title}</strong></div>
+                      <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 2 }}>{item.id}</div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
+                        <span>{item.platform} | {item.review_status}</span>
+                        {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
+                      </div>
+                      <div style={{ margin: '4px 0' }}>{item.objective}</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                        {reviewStatuses.map((status) => (
+                          <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
+                            {status}
+                          </button>
+                        ))}
+                        <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
+                          {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
+                        </button>
+                      </div>
+                    </div>
                   ))}
-                  <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
-                    {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
-                  </button>
                 </div>
-              </div>
+              </details>
             );
           })}
         </Panel>
@@ -262,47 +298,52 @@ export function Dashboard() {
             const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
 
             return (
-              <div key={group.testCaseId} style={{ marginBottom: 20, paddingBottom: 12, borderBottom: '1px solid #d9e1ec' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                  Test case: {group.testCaseId} ({group.runs.length} run{group.runs.length > 1 ? 's' : ''})
-                </div>
-                {/* test case group breadcrumb */}
-                <div style={{ fontSize: 11, marginBottom: 8 }}>
-                  {parentReq && (
-                    <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
-                      {parentReq.title}
-                    </span>
-                  )}
-                  {parentTC && (
-                    <span style={{ background: '#edf7ed', color: '#2d7a3a', borderRadius: 4, padding: '1px 6px' }}>
-                      ↳ {parentTC.title}
-                    </span>
-                  )}
-                  {!parentTC && (
-                    <span style={{ background: '#fff3cd', color: '#8a6d3b', borderRadius: 4, padding: '1px 6px' }}>
-                      Missing test case details
-                    </span>
-                  )}
-                </div>
+              <details key={group.testCaseId} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
+                <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                    Test case: {group.testCaseId} ({group.runs.length} run{group.runs.length > 1 ? 's' : ''})
+                  </span>
+                </summary>
 
-                {group.runs.map((item) => (
-                  <div key={item.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #e3e8ef' }}>
-                    <div><strong>{item.id}</strong></div>
-                    <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
-                    <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
-                    <details>
-                      <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
-                      <ul>
-                        {item.steps.map((step) => (
-                          <li key={`${item.id}-${step.step_number}`}>
-                            {step.action} {'→'} {step.verdict.status} ({step.verdict.reason})
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
+                <div style={{ marginLeft: 40 }}>
+                  {/* test case group breadcrumb */}
+                  <div style={{ fontSize: 11, margin: '8px 0' }}>
+                    {parentReq && (
+                      <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
+                        {parentReq.title}
+                      </span>
+                    )}
+                    {parentTC && (
+                      <span style={{ background: '#edf7ed', color: '#2d7a3a', borderRadius: 4, padding: '1px 6px' }}>
+                        ↳ {parentTC.title}
+                      </span>
+                    )}
+                    {!parentTC && (
+                      <span style={{ background: '#fff3cd', color: '#8a6d3b', borderRadius: 4, padding: '1px 6px' }}>
+                        Missing test case details
+                      </span>
+                    )}
                   </div>
-                ))}
-              </div>
+
+                  {group.runs.map((item) => (
+                    <div key={item.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #e3e8ef' }}>
+                      <div><strong>{item.id}</strong></div>
+                      <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
+                      <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
+                      <details>
+                        <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
+                        <ul>
+                          {item.steps.map((step) => (
+                            <li key={`${item.id}-${step.step_number}`}>
+                              {step.action} {'→'} {step.verdict.status} ({step.verdict.reason})
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </div>
+                  ))}
+                </div>
+              </details>
             );
           })}
         </Panel>
