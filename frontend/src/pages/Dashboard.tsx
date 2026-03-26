@@ -7,6 +7,17 @@ import type { AISuggestion, Platform, Requirement, TestCase, TestRun } from '../
 const priorities = ['low', 'medium', 'high'];
 const risks = ['low', 'medium', 'high'];
 const reviewStatuses = ['under_review', 'approved', 'rejected', 'needs_update'];
+const platformOptions: Platform[] = ['web', 'api', 'database', 'mobile', 'desktop'];
+const initialSelectedPlatforms: Platform[] = [];
+
+const initialRequirementForm = {
+  project_code: '',
+  title: '',
+  description: '',
+  priority: 'high',
+  risk: 'high',
+  business_rules: '',
+};
 
 export function Dashboard() {
   const [requirements, setRequirements] = useState<Requirement[]>([]);
@@ -17,16 +28,9 @@ export function Dashboard() {
   const [aiText, setAiText] = useState<string>('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNote, setAiNote] = useState<string>('');
-  const [form, setForm] = useState({
-    project_code: 'APP',
-    title: 'Login requirement',
-    description: 'User can log in successfully and reach the dashboard with the expected feature area visible.',
-    priority: 'high',
-    risk: 'high',
-    business_rules: 'Lock account after five failed attempts',
-  });
+  const [form, setForm] = useState(initialRequirementForm);
 
-  const selectedPlatforms = useMemo(() => ['web', 'api'] as Platform[], []);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(initialSelectedPlatforms);
 
   // Lookup maps for relationship labels
   const requirementById = useMemo(() => {
@@ -74,6 +78,24 @@ export function Dashboard() {
 
     return grouped;
   }, [testCases]);
+
+  const requirementsByProject = useMemo(() => {
+    const grouped: Array<{ projectCode: string; items: Requirement[] }> = [];
+    const indexByProjectCode: Record<string, number> = {};
+
+    for (const requirement of requirements) {
+      const projectCode = requirement.project_code?.trim() || 'UNSPECIFIED';
+      const existingIndex = indexByProjectCode[projectCode];
+      if (existingIndex === undefined) {
+        indexByProjectCode[projectCode] = grouped.length;
+        grouped.push({ projectCode, items: [requirement] });
+      } else {
+        grouped[existingIndex].items.push(requirement);
+      }
+    }
+
+    return grouped.sort((a, b) => a.projectCode.localeCompare(b.projectCode));
+  }, [requirements]);
 
   const requirementNumberById = useMemo(() => {
     const labels: Record<string, string> = {};
@@ -141,6 +163,10 @@ export function Dashboard() {
 
   const handleCreateRequirement = async (event: FormEvent) => {
     event.preventDefault();
+    if (selectedPlatforms.length === 0) {
+      setError('Select at least one platform.');
+      return;
+    }
     setBusy('requirement');
     setError('');
     try {
@@ -150,7 +176,8 @@ export function Dashboard() {
         business_rules: form.business_rules.split('\n').map((item) => item.trim()).filter(Boolean),
       });
       await refresh();
-      setForm({ ...form, title: '', description: '', business_rules: '' });
+      setForm(initialRequirementForm);
+      setSelectedPlatforms(initialSelectedPlatforms);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -202,6 +229,14 @@ export function Dashboard() {
     } finally {
       setBusy('');
     }
+  };
+
+  const togglePlatform = (platform: Platform) => {
+    setSelectedPlatforms((current) => (
+      current.includes(platform)
+        ? current.filter((item) => item !== platform)
+        : [...current, platform]
+    ));
   };
 
   const runsByTC = useMemo(() => {
@@ -268,8 +303,8 @@ export function Dashboard() {
             required
             onChange={(e) => setForm({ ...form, project_code: e.target.value.toUpperCase().replace(/\s+/g, '') })}
           />
-          <input value={form.title} placeholder="Requirement title" onChange={(e) => setForm({ ...form, title: e.target.value })} />
-          <textarea value={form.description} placeholder="Requirement description" rows={4} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <input value={form.title} placeholder="Requirement title" required onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <textarea value={form.description} placeholder="Requirement description" rows={4} required onChange={(e) => setForm({ ...form, description: e.target.value })} />
           <div style={{ display: 'flex', gap: 12 }}>
             <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
               {priorities.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -278,7 +313,21 @@ export function Dashboard() {
               {risks.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </div>
-          <div>Platforms: {selectedPlatforms.join(', ')}</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div>Platforms</div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {platformOptions.map((platform) => (
+                <label key={platform} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedPlatforms.includes(platform)}
+                    onChange={() => togglePlatform(platform)}
+                  />
+                  {platform}
+                </label>
+              ))}
+            </div>
+          </div>
           <textarea value={form.business_rules} placeholder="Business rules, one per line" rows={3} onChange={(e) => setForm({ ...form, business_rules: e.target.value })} />
           <button type="submit" disabled={busy === 'requirement'}>{busy === 'requirement' ? 'Creating...' : 'Create requirement'}</button>
         </form>
@@ -288,16 +337,29 @@ export function Dashboard() {
 
         {/* ── Requirements ────────────────────────────────── */}
         <Panel title="Requirements">
-          {requirements.length === 0 ? <p>No requirements yet.</p> : requirements.map((item) => (
-            <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
-              <strong>{item.title}</strong>
-              <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 4 }}>{item.id}</div>
-              <div style={{ margin: '4px 0' }}>{item.description}</div>
-              <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
-              <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
-                {busy === item.id ? 'Generating...' : 'Generate test cases'}
-              </button>
-            </div>
+          {requirements.length === 0 ? <p>No requirements yet.</p> : requirementsByProject.map((projectGroup) => (
+            <details key={projectGroup.projectCode} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
+              <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                <strong>Project: {projectGroup.projectCode} ({projectGroup.items.length} requirement{projectGroup.items.length > 1 ? 's' : ''})</strong>
+              </summary>
+              <div style={{ marginLeft: 20, marginTop: 8 }}>
+                {[...projectGroup.items].reverse().map((item) => (
+                  <details key={item.id} style={{ marginBottom: 16, paddingBottom: 16, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
+                    <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                      <strong>{item.title}</strong>
+                    </summary>
+                    <div style={{ marginLeft: 22, marginTop: 6 }}>
+                      <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 4 }}>{item.id}</div>
+                      <div style={{ margin: '4px 0' }}>{item.description}</div>
+                      <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
+                      <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
+                        {busy === item.id ? 'Generating...' : 'Generate test cases'}
+                      </button>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </details>
           ))}
         </Panel>
 
