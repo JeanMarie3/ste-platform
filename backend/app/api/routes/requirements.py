@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from app.schemas.requirements import RequirementCreate, RequirementRead
 from app.schemas.testcases import TestCaseRead
@@ -8,6 +8,17 @@ from app.services.testcase_service import TestCaseService
 router = APIRouter(prefix="/requirements", tags=["requirements"])
 requirement_service = RequirementService()
 testcase_service = TestCaseService()
+
+
+def _normalize_api_key(raw_key: str | None) -> str | None:
+    if raw_key is None:
+        return None
+    key = raw_key.strip()
+    if not key:
+        return None
+    if len(key) > 512:
+        raise HTTPException(status_code=400, detail="Invalid API key header")
+    return key
 
 
 @router.post("", response_model=RequirementRead)
@@ -29,8 +40,11 @@ def get_requirement(requirement_id: str) -> RequirementRead:
 
 
 @router.post("/{requirement_id}/generate-testcases", response_model=list[TestCaseRead])
-def generate_test_cases(requirement_id: str) -> list[TestCaseRead]:
+def generate_test_cases(
+    requirement_id: str,
+    x_openai_api_key: str | None = Header(default=None),
+) -> list[TestCaseRead]:
     requirement = requirement_service.get_requirement(requirement_id)
     if requirement is None:
         raise HTTPException(status_code=404, detail="Requirement not found")
-    return testcase_service.generate_for_requirement(requirement)
+    return testcase_service.generate_for_requirement(requirement, api_key=_normalize_api_key(x_openai_api_key))

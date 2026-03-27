@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
-import { apiGet, apiPost } from '../api/client';
+import { apiDelete, apiGet, apiPost } from '../api/client';
 import { Panel } from '../components/Panel';
 import type { AISuggestion, Platform, Requirement, TestCase, TestRun } from '../types';
 
@@ -28,6 +28,7 @@ export function Dashboard() {
   const [aiText, setAiText] = useState<string>('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNote, setAiNote] = useState<string>('');
+  const [aiApiKey, setAiApiKey] = useState<string>(() => localStorage.getItem('ste.openaiApiKey') ?? '');
   const [form, setForm] = useState(initialRequirementForm);
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(initialSelectedPlatforms);
@@ -134,14 +135,28 @@ export function Dashboard() {
     refresh().catch((err) => setError(String(err)));
   }, []);
 
+  useEffect(() => {
+    if (aiApiKey.trim()) {
+      localStorage.setItem('ste.openaiApiKey', aiApiKey.trim());
+    } else {
+      localStorage.removeItem('ste.openaiApiKey');
+    }
+  }, [aiApiKey]);
+
+  const aiHeaders = aiApiKey.trim() ? { 'X-OpenAI-Api-Key': aiApiKey.trim() } : undefined;
+
   const handleAiSuggest = async () => {
     if (!aiText.trim()) return;
     setAiLoading(true);
     setAiNote('');
     try {
-      const suggestion = await apiPost<AISuggestion>('/ai/suggest-requirement', { description: aiText });
+      const suggestion = await apiPost<AISuggestion>(
+        '/ai/suggest-requirement',
+        { description: aiText },
+        { headers: aiHeaders },
+      );
       if (!suggestion.ai_available) {
-        setAiNote('OpenAI key not configured — add OPENAI_API_KEY to your .env file.');
+        setAiNote('No AI key available. Add your own key above or configure OPENAI_API_KEY on the server.');
         return;
       }
       setForm({
@@ -189,7 +204,7 @@ export function Dashboard() {
     setBusy(requirementId);
     setError('');
     try {
-      await apiPost<TestCase[]>(`/requirements/${requirementId}/generate-testcases`);
+      await apiPost<TestCase[]>(`/requirements/${requirementId}/generate-testcases`, undefined, { headers: aiHeaders });
       await refresh();
     } catch (err) {
       setError(String(err));
@@ -223,6 +238,39 @@ export function Dashboard() {
         agent_type: testCase.platform,
         environment: 'local',
       });
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const deleteTestCase = async (testCase: TestCase) => {
+    const tcLabel = testCaseVersionById[testCase.id] ?? testCase.id;
+    const confirmed = window.confirm(`Delete ${tcLabel}? This will also delete all executions under it.`);
+    if (!confirmed) return;
+
+    setBusy(`delete-${testCase.id}`);
+    setError('');
+    try {
+      await apiDelete(`/testcases/${testCase.id}`);
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const deleteExecution = async (run: TestRun) => {
+    const confirmed = window.confirm(`Delete execution ${run.id}? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    setBusy(`delete-run-${run.id}`);
+    setError('');
+    try {
+      await apiDelete(`/executions/${run.id}`);
       await refresh();
     } catch (err) {
       setError(String(err));
@@ -278,6 +326,12 @@ export function Dashboard() {
 
       <Panel title="✦ AI Assist — Describe your requirement">
         <div style={{ display: 'grid', gap: 10 }}>
+          <input
+            type="password"
+            value={aiApiKey}
+            placeholder="Your OpenAI API key (used only for AI actions in this browser)"
+            onChange={(e) => setAiApiKey(e.target.value)}
+          />
           <textarea
             value={aiText}
             placeholder="Describe what needs to be tested in plain English, e.g. 'Users should be able to reset their password via email link within 10 minutes, with rate limiting to 3 attempts per hour.'"
@@ -407,6 +461,9 @@ export function Dashboard() {
                         <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
                           {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
                         </button>
+                        <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
+                          {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -460,6 +517,11 @@ export function Dashboard() {
                               <div><strong>{getExecutionLabel(versionGroup.runs.length - runIndex - 1)}</strong></div>
                               <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
                               <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
+                              <div style={{ margin: '4px 0' }}>
+                                <button onClick={() => deleteExecution(item)} disabled={busy === `delete-run-${item.id}`}>
+                                  {busy === `delete-run-${item.id}` ? 'Deleting...' : 'Delete execution'}
+                                </button>
+                              </div>
                               <details>
                                 <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
                                 <ul>

@@ -1,6 +1,1 @@
-INFO:     127.0.0.1:63766 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62043 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62043 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:63412 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58514 - "POST /execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54933 - "POST /execute HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54162 - "GET /health HTTP/1.1" 200 OK

@@ -10,6 +10,7 @@ from app.core.config import settings
 def get_connection() -> Iterator[sqlite3.Connection]:
     connection = sqlite3.connect(settings.sqlite_path)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     try:
         yield connection
         connection.commit()
@@ -62,7 +63,7 @@ def initialize_database() -> None:
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
                 steps_json TEXT NOT NULL,
-                FOREIGN KEY(test_case_id) REFERENCES test_cases(id)
+                FOREIGN KEY(test_case_id) REFERENCES test_cases(id) ON DELETE CASCADE
             );
             """
         )

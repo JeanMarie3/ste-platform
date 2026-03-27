@@ -48,6 +48,9 @@ class ExecutionService:
     def get_run(self, run_id: str) -> TestRunRead | None:
         return self.test_run_repository.get(run_id)
 
+    def delete_run(self, run_id: str) -> bool:
+        return self.test_run_repository.delete(run_id)
+
     def _call_agent(self, payload: dict) -> dict:
         req = urllib_request.Request(
             url=f"{settings.agent_base_url}/execute",

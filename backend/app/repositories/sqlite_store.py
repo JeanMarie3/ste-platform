@@ -126,6 +126,11 @@ class TestCaseRepository:
             )
         return item
 
+    def delete(self, test_case_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_cases WHERE id = ?", (test_case_id,))
+        return cursor.rowcount > 0
+
     def _map(self, row) -> TestCaseRead:
         return TestCaseRead(
             id=row["id"],
@@ -176,6 +181,16 @@ class TestRunRepository:
         with get_connection() as connection:
             row = connection.execute("SELECT * FROM test_runs WHERE id = ?", (run_id,)).fetchone()
         return self._map(row) if row else None
+
+    def delete(self, run_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_runs WHERE id = ?", (run_id,))
+        return cursor.rowcount > 0
+
+    def delete_by_test_case_id(self, test_case_id: str) -> int:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_runs WHERE test_case_id = ?", (test_case_id,))
+        return cursor.rowcount
 
     def _map(self, row) -> TestRunRead:
         return TestRunRead(

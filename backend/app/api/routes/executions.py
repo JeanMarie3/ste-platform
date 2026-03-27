@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.schemas.executions import StartExecutionRequest
 from app.schemas.testcases import TestRunRead
@@ -27,3 +27,12 @@ def get_run(run_id: str) -> TestRunRead:
     if item is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return item
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_run(run_id: str) -> Response:
+    deleted = service.delete_run(run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
