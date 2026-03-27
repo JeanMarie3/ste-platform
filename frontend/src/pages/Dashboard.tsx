@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { apiDelete, apiGet, apiPost } from '../api/client';
 import { Panel } from '../components/Panel';
+import { formatDateTime } from '../utils/formatters';
 import type { AISuggestion, Platform, Requirement, TestCase, TestRun } from '../types';
 
 const priorities = ['low', 'medium', 'high'];
@@ -404,6 +405,9 @@ export function Dashboard() {
                     </summary>
                     <div style={{ marginLeft: 22, marginTop: 6 }}>
                       <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 4 }}>{item.id}</div>
+                      <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
+                        Created: {formatDateTime(item.created_at)} {item.updated_at !== item.created_at && `| Updated: ${formatDateTime(item.updated_at)}`}
+                      </div>
                       <div style={{ margin: '4px 0' }}>{item.description}</div>
                       <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
                       <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
@@ -447,6 +451,9 @@ export function Dashboard() {
                     <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
                       <div><strong>{testCaseVersionById[item.id] ?? 'TC-0000-v1'}</strong></div>
                       <div style={{ fontSize: 12, color: '#6f7c8a', marginBottom: 2 }}>{item.title}</div>
+                      <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
+                        Created: {formatDateTime(item.created_at)} {item.updated_at !== item.created_at && `| Updated: ${formatDateTime(item.updated_at)}`}
+                      </div>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
                         <span>{item.platform} | {item.review_status}</span>
                         {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
@@ -516,6 +523,9 @@ export function Dashboard() {
                             <div key={item.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #e3e8ef' }}>
                               <div><strong>{getExecutionLabel(versionGroup.runs.length - runIndex - 1)}</strong></div>
                               <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
+                              <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
+                                Started: {formatDateTime(item.started_at)} {item.finished_at && `| Finished: ${formatDateTime(item.finished_at)}`}
+                              </div>
                               <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
                               <div style={{ margin: '4px 0' }}>
                                 <button onClick={() => deleteExecution(item)} disabled={busy === `delete-run-${item.id}`}>

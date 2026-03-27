@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.enums import ExecutionStatus, PlatformType, ReviewStatus
 
@@ -35,6 +35,7 @@ class TestCaseRead(BaseModel):
 
 
 class ReviewAction(BaseModel):
+    model_config = ConfigDict(use_enum_values=False)
     review_status: ReviewStatus
     comment: str | None = None
 

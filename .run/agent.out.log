@@ -1,1 +1,4 @@
 INFO:     127.0.0.1:54162 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61760 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61760 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61993 - "GET /health HTTP/1.1" 200 OK

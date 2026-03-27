@@ -9,6 +9,8 @@ export interface Requirement {
   priority: string;
   risk: string;
   status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TestCase {
@@ -20,6 +22,8 @@ export interface TestCase {
   priority: string;
   review_status: string;
   metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Verdict {
@@ -46,6 +50,8 @@ export interface TestRun {
   summary_reason: string;
   confidence_score: number;
   steps: StepExecution[];
+  started_at: string;
+  finished_at: string | null;
 }
 
 export interface AISuggestion {
