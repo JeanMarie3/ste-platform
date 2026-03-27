@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 type AppUser = { username: string; password: string; role: 'admin' | 'standard' };
 
 export default function App() {
-  const [user, setUser] = useState<{ username: string; role: 'admin' | 'standard' } | null>(null);
+  const [user, setUser] = useState<{ username: string; role: 'admin' | 'standard' } | null>(() => {
+    const savedSession = sessionStorage.getItem('ste.currentUser');
+    if (savedSession) return JSON.parse(savedSession);
+    return null;
+  });
 
   const [users, setUsers] = useState<AppUser[]>(() => {
     const saved = localStorage.getItem('ste.users');
@@ -19,8 +23,18 @@ export default function App() {
     localStorage.setItem('ste.users', JSON.stringify(users));
   }, [users]);
 
+  const handleLogin = (loggedInUser: { username: string; role: 'admin' | 'standard' }) => {
+    setUser(loggedInUser);
+    sessionStorage.setItem('ste.currentUser', JSON.stringify(loggedInUser));
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    sessionStorage.removeItem('ste.currentUser');
+  };
+
   if (!user) {
-    return <AuthScreen onLogin={setUser} users={users} setUsers={setUsers} />;
+    return <AuthScreen onLogin={handleLogin} users={users} setUsers={setUsers} />;
   }
 
   return (
@@ -32,7 +46,7 @@ export default function App() {
         </div>
         <div style={{ textAlign: 'right' }}>
           <div>Logged in as <strong>{user.username}</strong> ({user.role})</div>
-          <button style={{ marginTop: 8 }} onClick={() => setUser(null)}>Logout</button>
+          <button style={{ marginTop: 8 }} onClick={handleLogout}>Logout</button>
         </div>
       </header>
       <Dashboard userRole={user.role} />
