@@ -11,3 +11,4 @@ dist/
 dev-up.log
 backend/compile.log
 frontend/build.log
+backend/data/ste.db
