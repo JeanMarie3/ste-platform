@@ -5,3 +5,10 @@ node_modules/
 dist/
 .env
 .idea/
+
+# Runtime/process artifacts
+.run/
+dev-up.log
+backend/compile.log
+frontend/build.log
+backend/data/ste.db

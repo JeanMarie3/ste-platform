@@ -1,5 +1,5 @@
 from app.domain.enums import PlatformType, ReviewStatus
-from app.repositories.sqlite_store import TestCaseRepository
+from app.repositories.sqlite_store import TestCaseRepository, TestRunRepository
 from app.schemas.common import new_id, utc_now
 from app.schemas.requirements import RequirementRead
 from app.schemas.testcases import AssertionRule, ReviewAction, TestCaseRead, TestStep
@@ -9,9 +9,10 @@ from app.services.ai_service import AIService
 class TestCaseService:
     def __init__(self) -> None:
         self.repository = TestCaseRepository()
+        self.test_run_repository = TestRunRepository()
         self.ai_service = AIService()
 
-    def generate_for_requirement(self, requirement: RequirementRead) -> list[TestCaseRead]:
+    def generate_for_requirement(self, requirement: RequirementRead, api_key: str | None = None) -> list[TestCaseRead]:
         now = utc_now()
         created_items: list[TestCaseRead] = []
 
@@ -21,6 +22,7 @@ class TestCaseService:
                 requirement_description=requirement.description,
                 business_rules=requirement.business_rules,
                 platform=platform.value,
+                api_key=api_key,
             )
 
             steps = self._to_steps(ai_result.get("steps", []))
@@ -66,14 +68,24 @@ class TestCaseService:
         current = self.repository.get(test_case_id)
         if current is None:
             return None
+        # Convert string to ReviewStatus enum
+        try:
+            review_status = ReviewStatus(action.review_status)
+        except ValueError:
+            return None
         updated = current.model_copy(
             update={
-                "review_status": action.review_status,
+                "review_status": review_status,
                 "updated_at": utc_now(),
                 "metadata": {**current.metadata, "review_comment": action.comment},
             }
         )
         return self.repository.update(updated)
+
+    def delete_test_case(self, test_case_id: str) -> bool:
+        # Remove child runs first so deletion works even on older DBs without cascade constraints.
+        self.test_run_repository.delete_by_test_case_id(test_case_id)
+        return self.repository.delete(test_case_id)
 
     def _to_steps(self, raw_steps: list[dict]) -> list[TestStep]:
         steps: list[TestStep] = []

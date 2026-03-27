@@ -1,4 +1,7 @@
-from fastapi import APIRouter, HTTPException
+import json
+
+from fastapi import APIRouter, Body, HTTPException, Response, status
+from pydantic import ValidationError
 
 from app.schemas.testcases import ReviewAction, TestCaseRead
 from app.services.testcase_service import TestCaseService
@@ -21,8 +24,28 @@ def get_test_case(test_case_id: str) -> TestCaseRead:
 
 
 @router.post("/{test_case_id}/review", response_model=TestCaseRead)
-def review_test_case(test_case_id: str, action: ReviewAction) -> TestCaseRead:
+def review_test_case(test_case_id: str, action_payload: dict | str = Body(...)) -> TestCaseRead:
+    if isinstance(action_payload, str):
+        try:
+            action_payload = json.loads(action_payload)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=422, detail="Invalid JSON body for review action") from exc
+
+    try:
+        action = ReviewAction.model_validate(action_payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
     item = service.review_test_case(test_case_id, action)
     if item is None:
         raise HTTPException(status_code=404, detail="Test case not found")
     return item
+
+
+@router.delete("/{test_case_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_test_case(test_case_id: str) -> Response:
+    deleted = service.delete_test_case(test_case_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Test case not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+

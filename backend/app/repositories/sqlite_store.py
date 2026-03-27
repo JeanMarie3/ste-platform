@@ -38,9 +38,25 @@ class RequirementRepository:
             row = connection.execute("SELECT * FROM requirements WHERE id = ?", (requirement_id,)).fetchone()
         return self._map(row) if row else None
 
+    def next_sequence_for_project(self, project_code: str) -> int:
+        prefix = f"REQ-{project_code.upper()}-"
+        with get_connection() as connection:
+            rows = connection.execute("SELECT id FROM requirements WHERE id LIKE ?", (f"{prefix}%",)).fetchall()
+
+        max_sequence = 0
+        for row in rows:
+            requirement_id = row["id"]
+            if not requirement_id.startswith(prefix):
+                continue
+            suffix = requirement_id[len(prefix):]
+            if suffix.isdigit():
+                max_sequence = max(max_sequence, int(suffix))
+        return max_sequence + 1
+
     def _map(self, row) -> RequirementRead:
         return RequirementRead(
             id=row["id"],
+            project_code=self._extract_project_code(row["id"]),
             title=row["title"],
             description=row["description"],
             platforms=loads_json(row["platforms_json"]),
@@ -51,6 +67,12 @@ class RequirementRepository:
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
+
+    def _extract_project_code(self, requirement_id: str) -> str:
+        parts = requirement_id.split("-")
+        if len(parts) >= 3 and parts[0] == "REQ":
+            return parts[1]
+        return "LEGACY"
 
 
 class TestCaseRepository:
@@ -104,6 +126,11 @@ class TestCaseRepository:
             )
         return item
 
+    def delete(self, test_case_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_cases WHERE id = ?", (test_case_id,))
+        return cursor.rowcount > 0
+
     def _map(self, row) -> TestCaseRead:
         return TestCaseRead(
             id=row["id"],
@@ -154,6 +181,16 @@ class TestRunRepository:
         with get_connection() as connection:
             row = connection.execute("SELECT * FROM test_runs WHERE id = ?", (run_id,)).fetchone()
         return self._map(row) if row else None
+
+    def delete(self, run_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_runs WHERE id = ?", (run_id,))
+        return cursor.rowcount > 0
+
+    def delete_by_test_case_id(self, test_case_id: str) -> int:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_runs WHERE test_case_id = ?", (test_case_id,))
+        return cursor.rowcount
 
     def _map(self, row) -> TestRunRead:
         return TestRunRead(

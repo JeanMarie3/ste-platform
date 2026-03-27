@@ -1,7 +1,8 @@
 from datetime import datetime
+import json
 from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.domain.enums import ExecutionStatus, PlatformType, ReviewStatus
 
@@ -35,7 +36,17 @@ class TestCaseRead(BaseModel):
 
 
 class ReviewAction(BaseModel):
-    review_status: ReviewStatus
+    @model_validator(mode="before")
+    @classmethod
+    def parse_json_string_body(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            try:
+                return json.loads(data)
+            except json.JSONDecodeError:
+                return data
+        return data
+
+    review_status: str
     comment: str | None = None
 
 

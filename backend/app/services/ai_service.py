@@ -8,12 +8,23 @@ from app.core.config import settings
 
 class AIService:
     def __init__(self) -> None:
-        self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.default_api_key = settings.openai_api_key
+        self.client = OpenAI(api_key=self.default_api_key) if self.default_api_key else None
         self.model = "gpt-4o-mini"
 
     @property
     def available(self) -> bool:
         return self.client is not None
+
+    def available_for(self, api_key: str | None = None) -> bool:
+        key = (api_key or "").strip() or self.default_api_key
+        return bool(key)
+
+    def _client_for(self, api_key: str | None = None) -> OpenAI | None:
+        key = (api_key or "").strip() or self.default_api_key
+        if not key:
+            return None
+        return self.client if key == self.default_api_key and self.client is not None else OpenAI(api_key=key)
 
     def generate_test_case(
         self,
@@ -21,9 +32,11 @@ class AIService:
         requirement_description: str,
         business_rules: list[str],
         platform: str,
+        api_key: str | None = None,
     ) -> dict[str, Any]:
         """Generate AI-powered test steps and assertions for a requirement + platform."""
-        if not self.available:
+        client = self._client_for(api_key)
+        if client is None:
             return {}
 
         rules_text = "\n".join(f"- {r}" for r in business_rules) if business_rules else "None"
@@ -57,7 +70,7 @@ Platform guidance:
 Generate 4-7 meaningful steps and 2-4 assertions specific to this requirement. Be concrete."""
 
         try:
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
@@ -70,9 +83,10 @@ Generate 4-7 meaningful steps and 2-4 assertions specific to this requirement. B
         except Exception:
             return {}
 
-    def suggest_requirement(self, description: str) -> dict[str, Any]:
+    def suggest_requirement(self, description: str, api_key: str | None = None) -> dict[str, Any]:
         """Convert a plain-English description into a structured requirement."""
-        if not self.available:
+        client = self._client_for(api_key)
+        if client is None:
             return {}
 
         prompt = f"""You are a software requirements analyst. Structure the following natural language description into a formal software requirement.
@@ -96,7 +110,7 @@ Return ONLY a JSON object with this exact structure:
 Be specific, actionable, and professional."""
 
         try:
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},

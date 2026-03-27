@@ -1,5 +1,5 @@
 from app.repositories.sqlite_store import RequirementRepository
-from app.schemas.common import new_id, utc_now
+from app.schemas.common import utc_now
 from app.schemas.requirements import RequirementCreate, RequirementRead
 
 
@@ -9,12 +9,18 @@ class RequirementService:
 
     def create_requirement(self, payload: RequirementCreate) -> RequirementRead:
         now = utc_now()
+        normalized_project_code = payload.project_code.strip().upper()
+        sequence = self.repository.next_sequence_for_project(normalized_project_code)
+        requirement_id = f"REQ-{normalized_project_code}-{sequence:04d}"
+        payload_data = payload.model_dump()
+        payload_data["project_code"] = normalized_project_code
+
         item = RequirementRead(
-            id=new_id("REQ"),
+            id=requirement_id,
             status="created",
             created_at=now,
             updated_at=now,
-            **payload.model_dump(),
+            **payload_data,
         )
         return self.repository.create(item)
 
