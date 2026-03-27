@@ -49,7 +49,7 @@ def initialize_database() -> None:
                 metadata_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                FOREIGN KEY(requirement_id) REFERENCES requirements(id)
+                FOREIGN KEY(requirement_id) REFERENCES requirements(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS test_runs (

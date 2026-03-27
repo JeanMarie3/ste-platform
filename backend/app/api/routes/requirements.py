@@ -39,6 +39,13 @@ def get_requirement(requirement_id: str) -> RequirementRead:
     return item
 
 
+@router.delete("/{requirement_id}", status_code=204)
+def delete_requirement(requirement_id: str) -> None:
+    success = requirement_service.delete_requirement(requirement_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+
 @router.post("/{requirement_id}/generate-testcases", response_model=list[TestCaseRead])
 def generate_test_cases(
     requirement_id: str,

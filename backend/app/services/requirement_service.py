@@ -29,3 +29,8 @@ class RequirementService:
 
     def get_requirement(self, requirement_id: str) -> RequirementRead | None:
         return self.repository.get(requirement_id)
+
+    def delete_requirement(self, requirement_id: str) -> bool:
+        from app.repositories.sqlite_store import TestCaseRepository
+        TestCaseRepository().delete_by_requirement_id(requirement_id)
+        return self.repository.delete(requirement_id)

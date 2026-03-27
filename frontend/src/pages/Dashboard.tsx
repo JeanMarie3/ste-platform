@@ -266,6 +266,22 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   };
 
+  const deleteRequirement = async (requirementId: string) => {
+    const confirmed = window.confirm(`Delete requirement ${requirementId}? This will also delete all test cases and executions under it.`);
+    if (!confirmed) return;
+
+    setBusy(`delete-req-${requirementId}`);
+    setError('');
+    try {
+      await apiDelete(`/requirements/${requirementId}`);
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const reviewTestCase = async (testCaseId: string, review_status: string) => {
     setBusy(testCaseId);
     setError('');
@@ -462,9 +478,16 @@ export function Dashboard({ userRole }: DashboardProps) {
                       </div>
                       <div style={{ margin: '4px 0' }}>{item.description}</div>
                       <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
-                      <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
-                        {busy === item.id ? 'Generating...' : 'Generate test cases'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id}>
+                          {busy === item.id ? 'Generating...' : 'Generate test cases'}
+                        </button>
+                        {userRole === 'admin' && (
+                          <button onClick={() => deleteRequirement(item.id)} disabled={busy === `delete-req-${item.id}`}>
+                            {busy === `delete-req-${item.id}` ? 'Deleting...' : 'Delete requirement'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </details>
                 ))}

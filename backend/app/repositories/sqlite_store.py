@@ -41,17 +41,25 @@ class RequirementRepository:
     def next_sequence_for_project(self, project_code: str) -> int:
         prefix = f"REQ-{project_code.upper()}-"
         with get_connection() as connection:
-            rows = connection.execute("SELECT id FROM requirements WHERE id LIKE ?", (f"{prefix}%",)).fetchall()
+            row = connection.execute(
+                "SELECT id FROM requirements WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+                (f"{prefix}%",),
+            ).fetchone()
 
-        max_sequence = 0
-        for row in rows:
-            requirement_id = row["id"]
-            if not requirement_id.startswith(prefix):
-                continue
-            suffix = requirement_id[len(prefix):]
-            if suffix.isdigit():
-                max_sequence = max(max_sequence, int(suffix))
-        return max_sequence + 1
+            if not row:
+                return 1
+
+            try:
+                seq_str = row["id"].split("-")[-1]
+                return int(seq_str) + 1
+            except ValueError:
+                return 1
+
+    def delete(self, requirement_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM requirements WHERE id = ?", (requirement_id,))
+            connection.commit()
+            return cursor.rowcount > 0
 
     def _map(self, row) -> RequirementRead:
         return RequirementRead(
@@ -125,6 +133,11 @@ class TestCaseRepository:
                 (item.review_status.value, dumps_json(item.metadata), item.updated_at.isoformat(), item.id),
             )
         return item
+
+    def delete_by_requirement_id(self, requirement_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_cases WHERE requirement_id = ?", (requirement_id,))
+        return cursor.rowcount > 0
 
     def delete(self, test_case_id: str) -> bool:
         with get_connection() as connection:
