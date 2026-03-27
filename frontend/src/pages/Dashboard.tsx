@@ -402,45 +402,43 @@ export function Dashboard({ userRole }: DashboardProps) {
         </div>
       </Panel>
 
-      {userRole === 'admin' && (
-        <Panel title="Create Requirement">
-          <form onSubmit={handleCreateRequirement} style={{ display: 'grid', gap: 12 }}>
-            <input
-              value={form.project_code}
-              placeholder="Project code (e.g. APP)"
-              required
-              onChange={(e) => setForm({ ...form, project_code: e.target.value.toUpperCase().replace(/\s+/g, '') })}
-            />
-            <input value={form.title} placeholder="Requirement title" required onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            <textarea value={form.description} placeholder="Requirement description" rows={4} required onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <div style={{ display: 'flex', gap: 12 }}>
-              <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                {priorities.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-              <select value={form.risk} onChange={(e) => setForm({ ...form, risk: e.target.value })}>
-                {risks.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
+      <Panel title="Create Requirement">
+        <form onSubmit={handleCreateRequirement} style={{ display: 'grid', gap: 12 }}>
+          <input
+            value={form.project_code}
+            placeholder="Project code (e.g. APP)"
+            required
+            onChange={(e) => setForm({ ...form, project_code: e.target.value.toUpperCase().replace(/\s+/g, '') })}
+          />
+          <input value={form.title} placeholder="Requirement title" required onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <textarea value={form.description} placeholder="Requirement description" rows={4} required onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <div style={{ display: 'flex', gap: 12 }}>
+            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+              {priorities.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <select value={form.risk} onChange={(e) => setForm({ ...form, risk: e.target.value })}>
+              {risks.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div>Platforms</div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {platformOptions.map((platform) => (
+                <label key={platform} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedPlatforms.includes(platform)}
+                    onChange={() => togglePlatform(platform)}
+                  />
+                  {platform}
+                </label>
+              ))}
             </div>
-            <div style={{ display: 'grid', gap: 6 }}>
-              <div>Platforms</div>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                {platformOptions.map((platform) => (
-                  <label key={platform} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedPlatforms.includes(platform)}
-                      onChange={() => togglePlatform(platform)}
-                    />
-                    {platform}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <textarea value={form.business_rules} placeholder="Business rules, one per line" rows={3} onChange={(e) => setForm({ ...form, business_rules: e.target.value })} />
-            <button type="submit" disabled={busy === 'requirement'}>{busy === 'requirement' ? 'Creating...' : 'Create requirement'}</button>
-          </form>
-        </Panel>
-      )}
+          </div>
+          <textarea value={form.business_rules} placeholder="Business rules, one per line" rows={3} onChange={(e) => setForm({ ...form, business_rules: e.target.value })} />
+          <button type="submit" disabled={busy === 'requirement'}>{busy === 'requirement' ? 'Creating...' : 'Create requirement'}</button>
+        </form>
+      </Panel>
 
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
 
@@ -464,11 +462,9 @@ export function Dashboard({ userRole }: DashboardProps) {
                       </div>
                       <div style={{ margin: '4px 0' }}>{item.description}</div>
                       <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
-                      {userRole === 'admin' && (
-                        <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
-                          {busy === item.id ? 'Generating...' : 'Generate test cases'}
-                        </button>
-                      )}
+                      <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
+                        {busy === item.id ? 'Generating...' : 'Generate test cases'}
+                      </button>
                     </div>
                   </details>
                 ))}
@@ -526,21 +522,21 @@ export function Dashboard({ userRole }: DashboardProps) {
                               {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
                             </div>
                             <div style={{ margin: '4px 0' }}>{item.objective}</div>
-                            {userRole === 'admin' && (
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                                {reviewStatuses.map((status) => (
-                                  <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
-                                    {status}
-                                  </button>
-                                ))}
-                                <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
-                                  {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                              {reviewStatuses.map((status) => (
+                                <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
+                                  {status}
                                 </button>
+                              ))}
+                              <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
+                                {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
+                              </button>
+                              {userRole === 'admin' && (
                                 <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
                                   {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}
                                 </button>
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
                           );
                         })}
