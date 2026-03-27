@@ -68,9 +68,14 @@ class TestCaseService:
         current = self.repository.get(test_case_id)
         if current is None:
             return None
+        # Convert string to ReviewStatus enum
+        try:
+            review_status = ReviewStatus(action.review_status)
+        except ValueError:
+            return None
         updated = current.model_copy(
             update={
-                "review_status": action.review_status,
+                "review_status": review_status,
                 "updated_at": utc_now(),
                 "metadata": {**current.metadata, "review_comment": action.comment},
             }

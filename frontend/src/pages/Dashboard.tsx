@@ -119,6 +119,54 @@ export function Dashboard() {
     return labels;
   }, [testCasesByRequirement, requirementNumberById]);
 
+  const testCasesByProject = useMemo(() => {
+    const grouped: Array<{ projectCode: string; totalCases: number; tcGroups: Array<{ tcBase: string; versions: TestCase[] }> }> = [];
+    const projectIndexByCode: Record<string, number> = {};
+    const tcIndexByProject: Record<string, Record<string, number>> = {};
+
+    for (const item of testCases) {
+      const parentRequirement = requirementById[item.requirement_id];
+      const projectCode = parentRequirement?.project_code?.trim() || 'UNSPECIFIED';
+      const tcVersion = testCaseVersionById[item.id] ?? item.id;
+      const tcBaseMatch = tcVersion.match(/^(TC-\d+)/);
+      const tcBase = tcBaseMatch ? tcBaseMatch[1] : 'TC-0000';
+
+      let projectIdx = projectIndexByCode[projectCode];
+      if (projectIdx === undefined) {
+        projectIdx = grouped.length;
+        projectIndexByCode[projectCode] = projectIdx;
+        grouped.push({ projectCode, totalCases: 0, tcGroups: [] });
+        tcIndexByProject[projectCode] = {};
+      }
+
+      grouped[projectIdx].totalCases += 1;
+
+      const tcGroupIndex = tcIndexByProject[projectCode][tcBase];
+      if (tcGroupIndex === undefined) {
+        tcIndexByProject[projectCode][tcBase] = grouped[projectIdx].tcGroups.length;
+        grouped[projectIdx].tcGroups.push({ tcBase, versions: [item] });
+      } else {
+        grouped[projectIdx].tcGroups[tcGroupIndex].versions.push(item);
+      }
+    }
+
+    return grouped
+      .map((projectGroup) => ({
+        ...projectGroup,
+        tcGroups: projectGroup.tcGroups
+          .map((tcGroup) => ({
+            ...tcGroup,
+            versions: [...tcGroup.versions].sort((a, b) => {
+              const aVer = parseInt((testCaseVersionById[a.id] ?? '').split('-v')[1] || '0', 10);
+              const bVer = parseInt((testCaseVersionById[b.id] ?? '').split('-v')[1] || '0', 10);
+              return bVer - aVer;
+            }),
+          }))
+          .sort((a, b) => a.tcBase.localeCompare(b.tcBase)),
+      }))
+      .sort((a, b) => a.projectCode.localeCompare(b.projectCode));
+  }, [testCases, requirementById, testCaseVersionById]);
+
   const getExecutionLabel = (index: number): string => `execution-${String(index + 1).padStart(2, '0')}`;
 
   const refresh = async () => {
@@ -421,63 +469,78 @@ export function Dashboard() {
           ))}
         </Panel>
 
-        {/* ── Test Cases — grouped by Requirement ── */}
+        {/* ── Test Cases — grouped by Project -> TC base -> versions ── */}
         <Panel title="Test Cases">
-          {testCases.length === 0 ? <p>No test cases yet.</p> : testCasesByRequirement.map((group) => {
-            const parentReq = requirementById[group.requirementId];
+          {testCases.length === 0 ? <p>No test cases yet.</p> : testCasesByProject.map((projectGroup) => (
+            <details key={projectGroup.projectCode} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
+              <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                <strong>Project: {projectGroup.projectCode} ({projectGroup.totalCases} test case{projectGroup.totalCases > 1 ? 's' : ''})</strong>
+              </summary>
 
-            return (
-              <details key={group.requirementId} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
-                <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>
-                    Requirement: {parentReq ? parentReq.title : `Missing requirement (${group.requirementId})`} ({group.cases.length} test case{group.cases.length > 1 ? 's' : ''})
-                  </span>
-                </summary>
+              <div style={{ marginLeft: 20, marginTop: 8 }}>
+                {projectGroup.tcGroups.map((group) => {
 
-                <div style={{ marginLeft: 40 }}>
-                  <div style={{ fontSize: 11, margin: '8px 0' }}>
-                    {parentReq ? (
-                      <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px' }}>
-                        {group.requirementId}
-                      </span>
-                    ) : (
-                      <span style={{ background: '#fff3cd', color: '#8a6d3b', borderRadius: 4, padding: '1px 6px' }}>
-                        Requirement not found
-                      </span>
-                    )}
-                  </div>
+                  return (
+                    <details key={group.tcBase} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
+                      <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>
+                          {group.tcBase} ({group.versions.length} version{group.versions.length > 1 ? 's' : ''})
+                        </span>
+                      </summary>
 
-                  {[...group.cases].reverse().map((item) => (
-                    <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
-                      <div><strong>{testCaseVersionById[item.id] ?? 'TC-0000-v1'}</strong></div>
-                      <div style={{ fontSize: 12, color: '#6f7c8a', marginBottom: 2 }}>{item.title}</div>
-                      <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
-                        Created: {formatDateTime(item.created_at)} {item.updated_at !== item.created_at && `| Updated: ${formatDateTime(item.updated_at)}`}
+                      <div style={{ marginLeft: 40 }}>
+                        {group.versions.map((item) => {
+                          const parentReq = requirementById[item.requirement_id];
+
+                          return (
+                          <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
+                            <div><strong>{testCaseVersionById[item.id] ?? 'TC-0000-v1'}</strong></div>
+                            <div style={{ fontSize: 12, color: '#6f7c8a', marginBottom: 2 }}>
+                              {item.title}
+                              {parentReq ? ` - ${parentReq.title}` : ''}
+                            </div>
+                            <div style={{ fontSize: 11, marginBottom: 4 }}>
+                              {parentReq ? (
+                                <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px' }}>
+                                  {item.requirement_id}
+                                </span>
+                              ) : (
+                                <span style={{ background: '#fff3cd', color: '#8a6d3b', borderRadius: 4, padding: '1px 6px' }}>
+                                  Requirement not found
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
+                              Created: {formatDateTime(item.created_at)} {item.updated_at !== item.created_at && `| Updated: ${formatDateTime(item.updated_at)}`}
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
+                              <span>{item.platform} | {item.review_status}</span>
+                              {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
+                            </div>
+                            <div style={{ margin: '4px 0' }}>{item.objective}</div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                              {reviewStatuses.map((status) => (
+                                <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
+                                  {status}
+                                </button>
+                              ))}
+                              <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
+                                {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
+                              </button>
+                              <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
+                                {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}
+                              </button>
+                            </div>
+                          </div>
+                          );
+                        })}
                       </div>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
-                        <span>{item.platform} | {item.review_status}</span>
-                        {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
-                      </div>
-                      <div style={{ margin: '4px 0' }}>{item.objective}</div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                        {reviewStatuses.map((status) => (
-                          <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
-                            {status}
-                          </button>
-                        ))}
-                        <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
-                          {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
-                        </button>
-                        <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
-                          {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
+                    </details>
+                  );
+                })}
+              </div>
+            </details>
+          ))}
         </Panel>
 
         {/* ── Executions — grouped by test case ── */}

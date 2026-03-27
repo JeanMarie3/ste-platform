@@ -1,4 +1,7 @@
-from fastapi import APIRouter, HTTPException, Response, status
+import json
+
+from fastapi import APIRouter, Body, HTTPException, Response, status
+from pydantic import ValidationError
 
 from app.schemas.executions import StartExecutionRequest
 from app.schemas.testcases import TestRunRead
@@ -9,7 +12,18 @@ service = ExecutionService()
 
 
 @router.post("/start", response_model=TestRunRead)
-def start_execution(payload: StartExecutionRequest) -> TestRunRead:
+def start_execution(payload_body: dict | str = Body(...)) -> TestRunRead:
+    if isinstance(payload_body, str):
+        try:
+            payload_body = json.loads(payload_body)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=422, detail="Invalid JSON body for execution request") from exc
+
+    try:
+        payload = StartExecutionRequest.model_validate(payload_body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
     try:
         return service.start_execution(payload)
     except KeyError as exc:

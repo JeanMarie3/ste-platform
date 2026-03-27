@@ -28,9 +28,15 @@ export async function apiGet<T>(path: string, options?: RequestOptions): Promise
 }
 
 export async function apiPost<T>(path: string, payload?: unknown, options?: RequestOptions): Promise<T> {
+  const body = payload === undefined
+    ? undefined
+    : typeof payload === 'string'
+      ? payload
+      : JSON.stringify(payload);
+
   return request<T>(path, {
     method: 'POST',
-    body: payload ? JSON.stringify(payload) : undefined,
+    body,
     headers: options?.headers,
   });
 }
