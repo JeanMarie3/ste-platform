@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.core.database import dumps_json, get_connection, loads_json
+from app.schemas.auth import UserPublic, UserRecord
 from app.schemas.requirements import RequirementRead
 from app.schemas.testcases import TestCaseRead, TestRunRead
 
@@ -218,3 +219,85 @@ class TestRunRepository:
             finished_at=datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None,
             steps=loads_json(row["steps_json"]),
         )
+
+
+class AuthRepository:
+    def create(self, item: UserRecord) -> UserPublic:
+        with get_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO users (id, username, email, password_hash, password_salt, role, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item.id,
+                    item.username,
+                    item.email,
+                    item.password_hash,
+                    item.password_salt,
+                    item.role,
+                    item.created_at.isoformat(),
+                    item.updated_at.isoformat(),
+                ),
+            )
+        return self._map_public_row(
+            {
+                "id": item.id,
+                "username": item.username,
+                "email": item.email,
+                "role": item.role,
+                "created_at": item.created_at.isoformat(),
+                "updated_at": item.updated_at.isoformat(),
+            }
+        )
+
+    def list(self) -> list[UserPublic]:
+        with get_connection() as connection:
+            rows = connection.execute("SELECT id, username, email, role, created_at, updated_at FROM users ORDER BY created_at ASC").fetchall()
+        return [self._map_public_row(row) for row in rows]
+
+    def get_by_username(self, username: str) -> UserRecord | None:
+        with get_connection() as connection:
+            row = connection.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        return self._map_record_row(row) if row else None
+
+    def get_by_email(self, email: str) -> UserRecord | None:
+        with get_connection() as connection:
+            row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        return self._map_record_row(row) if row else None
+
+    def get_by_username_and_email(self, username: str, email: str) -> UserRecord | None:
+        with get_connection() as connection:
+            row = connection.execute("SELECT * FROM users WHERE username = ? AND email = ?", (username, email)).fetchone()
+        return self._map_record_row(row) if row else None
+
+    def update_password(self, user_id: str, password_hash: str, password_salt: str, updated_at: datetime) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
+                (password_hash, password_salt, updated_at.isoformat(), user_id),
+            )
+        return cursor.rowcount > 0
+
+    def _map_public_row(self, row) -> UserPublic:
+        return UserPublic(
+            id=row["id"],
+            username=row["username"],
+            email=row["email"],
+            role=row["role"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    def _map_record_row(self, row) -> UserRecord:
+        return UserRecord(
+            id=row["id"],
+            username=row["username"],
+            email=row["email"],
+            role=row["role"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            password_hash=row["password_hash"],
+            password_salt=row["password_salt"],
+        )
+

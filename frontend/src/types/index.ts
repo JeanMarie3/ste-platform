@@ -63,3 +63,17 @@ export interface AISuggestion {
   risk: string;
   business_rules: string[];
 }
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  role: 'admin' | 'standard';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuthMessage {
+  message: string;
+}
+

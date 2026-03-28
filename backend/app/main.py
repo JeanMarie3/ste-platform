@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import executions, health, openai_webhooks, requirements, testcases
+from app.api.routes import auth, executions, health, openai_webhooks, requirements, testcases
 from app.api.routes import ai
 from app.core.config import settings
 from app.core.database import initialize_database
@@ -19,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix=settings.api_prefix)
+app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(requirements.router, prefix=settings.api_prefix)
 app.include_router(testcases.router, prefix=settings.api_prefix)
 app.include_router(executions.router, prefix=settings.api_prefix)

@@ -1,7 +1,12 @@
 import { Dashboard } from './pages/Dashboard';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
-type AppUser = { username: string; password: string; role: 'admin' | 'standard' };
+import { apiPost } from './api/client';
+import type { AuthMessage, AuthUser } from './types';
+
+const normalizeEmail = (value: string): string => value.trim().toLowerCase();
+
+const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 export default function App() {
   const [user, setUser] = useState<{ username: string; role: 'admin' | 'standard' } | null>(() => {
@@ -9,19 +14,6 @@ export default function App() {
     if (savedSession) return JSON.parse(savedSession);
     return null;
   });
-
-  const [users, setUsers] = useState<AppUser[]>(() => {
-    const saved = localStorage.getItem('ste.users');
-    if (saved) return JSON.parse(saved);
-    return [
-      { username: 'admin', password: 'admin', role: 'admin' },
-      { username: 'user', password: 'user', role: 'standard' }
-    ];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('ste.users', JSON.stringify(users));
-  }, [users]);
 
   const handleLogin = (loggedInUser: { username: string; role: 'admin' | 'standard' }) => {
     setUser(loggedInUser);
@@ -34,7 +26,7 @@ export default function App() {
   };
 
   if (!user) {
-    return <AuthScreen onLogin={handleLogin} users={users} setUsers={setUsers} />;
+    return <AuthScreen onLogin={handleLogin} />;
   }
 
   return (
@@ -54,64 +46,79 @@ export default function App() {
   );
 }
 
-function AuthScreen({ onLogin, users, setUsers }: { 
+function AuthScreen({ onLogin }: {
   onLogin: (user: { username: string; role: 'admin' | 'standard' }) => void;
-  users: AppUser[];
-  setUsers: (users: AppUser[]) => void;
 }) {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
-  
+
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'admin' | 'standard'>('standard');
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [notification, setNotification] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const clearAuthFields = (clearNotification = true) => {
+    setError('');
+    setPassword('');
+    setEmail('');
+    if (clearNotification) setNotification('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setMessage('');
-    
+    if (mode !== 'login') setNotification('');
+
     if (!username.trim()) {
       setError('Username is required');
       return;
     }
 
-    if (mode === 'login') {
-      const foundUser = users.find(u => u.username === username && u.password === password);
-      if (foundUser) {
-        onLogin({ username: foundUser.username, role: foundUser.role });
-      } else {
-        setError('Invalid credentials.');
-      }
-    } else if (mode === 'signup') {
-      if (!password.trim()) {
-        setError('Password is required');
+    try {
+      if (mode === 'login') {
+        const loggedInUser = await apiPost<AuthUser>('/auth/login', { username, password });
+        onLogin({ username: loggedInUser.username, role: loggedInUser.role });
         return;
       }
-      if (users.some(u => u.username === username)) {
-        setError('Username already exists');
+
+      if (!email.trim()) {
+        setError('Email is required');
         return;
       }
-      const newUser: AppUser = { username, password, role };
-      setUsers([...users, newUser]);
-      setMessage('Account created! You can now log in.');
-      setMode('login');
-      setPassword('');
-    } else if (mode === 'forgot') {
-      const foundUser = users.find(u => u.username === username);
-      if (!foundUser) {
-        setError('Username not found');
+      if (!isValidEmail(email)) {
+        setError('Please enter a valid email address');
         return;
       }
       if (!password.trim()) {
-        setError('New password is required');
+        setError(mode === 'forgot' ? 'New password is required' : 'Password is required');
         return;
       }
-      setUsers(users.map(u => u.username === username ? { ...u, password } : u));
-      setMessage('Password reset successful! You can now log in.');
+
+      const normalizedEmail = normalizeEmail(email);
+      if (mode === 'signup') {
+        await apiPost<AuthUser>('/auth/signup', {
+          username,
+          email: normalizedEmail,
+          password,
+          role,
+        });
+        setNotification('Account created successfully. You can now log in.');
+        setMode('login');
+        clearAuthFields(false);
+        return;
+      }
+
+      const response = await apiPost<AuthMessage>('/auth/reset-password', {
+        username,
+        email: normalizedEmail,
+        new_password: password,
+      });
+      setNotification(response.message || 'Password reset successful. You can now log in.');
       setMode('login');
-      setPassword('');
+      clearAuthFields(false);
+    } catch (err) {
+      setError(String(err));
     }
   };
 
@@ -124,18 +131,28 @@ function AuthScreen({ onLogin, users, setUsers }: {
           {mode === 'forgot' && 'Reset Password'}
         </h2>
         {error && <div style={{ color: 'red', fontSize: 14 }}>{error}</div>}
-        {message && <div style={{ color: 'green', fontSize: 14 }}>{message}</div>}
-        
-        <input 
-          placeholder="Username" 
-          value={username} 
-          onChange={e => setUsername(e.target.value)} 
+        {notification && <div style={{ color: 'green', fontSize: 14 }}>{notification}</div>}
+
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
           style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }}
         />
-        
+
+        {(mode === 'signup' || mode === 'forgot') && (
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }}
+          />
+        )}
+
         {mode === 'signup' && (
-          <select 
-            value={role} 
+          <select
+            value={role}
             onChange={e => setRole(e.target.value as 'admin' | 'standard')}
             style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }}
           >
@@ -144,27 +161,27 @@ function AuthScreen({ onLogin, users, setUsers }: {
           </select>
         )}
 
-        <input 
-          type="password" 
-          placeholder={mode === 'forgot' ? "New Password" : "Password"}
-          value={password} 
-          onChange={e => setPassword(e.target.value)} 
+        <input
+          type="password"
+          placeholder={mode === 'forgot' ? 'New Password' : 'Password'}
+          value={password}
+          onChange={e => setPassword(e.target.value)}
           style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }}
         />
-        
+
         <button type="submit" style={{ padding: 10, background: '#0066cc', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
           {mode === 'login' && 'Login'}
           {mode === 'signup' && 'Sign Up'}
           {mode === 'forgot' && 'Reset'}
         </button>
-        
+
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 8 }}>
           {mode !== 'login' ? (
-            <span style={{ color: '#0066cc', cursor: 'pointer' }} onClick={() => { setMode('login'); setError(''); setMessage(''); setPassword(''); }}>Back to Login</span>
+            <span style={{ color: '#0066cc', cursor: 'pointer' }} onClick={() => { setMode('login'); clearAuthFields(); }}>Back to Login</span>
           ) : (
             <>
-              <span style={{ color: '#0066cc', cursor: 'pointer' }} onClick={() => { setMode('signup'); setError(''); setMessage(''); setPassword(''); }}>Create Account</span>
-              <span style={{ color: '#0066cc', cursor: 'pointer' }} onClick={() => { setMode('forgot'); setError(''); setMessage(''); setPassword(''); }}>Forgot Password?</span>
+              <span style={{ color: '#0066cc', cursor: 'pointer' }} onClick={() => { setMode('signup'); clearAuthFields(); }}>Create Account</span>
+              <span style={{ color: '#0066cc', cursor: 'pointer' }} onClick={() => { setMode('forgot'); clearAuthFields(); }}>Forgot Password?</span>
             </>
           )}
         </div>
