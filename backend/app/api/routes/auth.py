@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.auth import AuthMessage, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic
+from app.schemas.auth import AuthMessage, DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -30,6 +30,19 @@ def reset_password(payload: ResetPasswordRequest) -> AuthMessage:
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return AuthMessage(message="Password reset successful")
+
+
+@router.post("/delete-account", response_model=AuthMessage)
+def delete_account(payload: DeleteAccountRequest) -> AuthMessage:
+    try:
+        auth_service.delete_account(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return AuthMessage(message="Account deleted successfully")
 
 
 @router.get("/users", response_model=list[UserPublic])

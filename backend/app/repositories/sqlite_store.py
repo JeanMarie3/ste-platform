@@ -279,6 +279,16 @@ class AuthRepository:
             )
         return cursor.rowcount > 0
 
+    def count_by_role(self, role: str) -> int:
+        with get_connection() as connection:
+            row = connection.execute("SELECT COUNT(1) AS total FROM users WHERE role = ?", (role,)).fetchone()
+        return int(row["total"]) if row else 0
+
+    def delete_by_id(self, user_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        return cursor.rowcount > 0
+
     def _map_public_row(self, row) -> UserPublic:
         return UserPublic(
             id=row["id"],

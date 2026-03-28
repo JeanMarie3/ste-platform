@@ -3,7 +3,7 @@ import hmac
 import os
 
 from app.repositories.sqlite_store import AuthRepository
-from app.schemas.auth import LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, UserRecord
+from app.schemas.auth import DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, UserRecord
 from app.schemas.common import new_id, utc_now
 
 
@@ -67,6 +67,27 @@ class AuthService:
 
     def list_users(self) -> list[UserPublic]:
         return self.repository.list()
+
+    def delete_account(self, payload: DeleteAccountRequest) -> None:
+        username = payload.username.strip()
+        email = payload.email.strip().lower()
+        if payload.confirmation_text.strip().upper() != "DELETE":
+            raise ValueError("Type DELETE to confirm account deletion")
+
+        user = self.repository.get_by_username_and_email(username, email)
+        if user is None:
+            raise LookupError("Username and email do not match any account")
+
+        candidate_hash = _hash_password(payload.password, user.password_salt)
+        if not hmac.compare_digest(candidate_hash, user.password_hash):
+            raise PermissionError("Invalid credentials")
+
+        if user.role == "admin" and self.repository.count_by_role("admin") <= 1:
+            raise ValueError("Cannot delete the last admin account")
+
+        deleted = self.repository.delete_by_id(user.id)
+        if not deleted:
+            raise LookupError("Account not found")
 
 
 def _hash_password(password: str, salt_hex: str) -> str:
