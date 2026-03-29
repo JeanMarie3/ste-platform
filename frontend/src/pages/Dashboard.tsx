@@ -20,7 +20,11 @@ const initialRequirementForm = {
   business_rules: '',
 };
 
-export function Dashboard() {
+export interface DashboardProps {
+  userRole?: 'admin' | 'standard';
+}
+
+export function Dashboard({ userRole }: DashboardProps) {
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [runs, setRuns] = useState<TestRun[]>([]);
@@ -262,6 +266,22 @@ export function Dashboard() {
     }
   };
 
+  const deleteRequirement = async (requirementId: string) => {
+    const confirmed = window.confirm(`Delete requirement ${requirementId}? This will also delete all test cases and executions under it.`);
+    if (!confirmed) return;
+
+    setBusy(`delete-req-${requirementId}`);
+    setError('');
+    try {
+      await apiDelete(`/requirements/${requirementId}`);
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const reviewTestCase = async (testCaseId: string, review_status: string) => {
     setBusy(testCaseId);
     setError('');
@@ -458,9 +478,16 @@ export function Dashboard() {
                       </div>
                       <div style={{ margin: '4px 0' }}>{item.description}</div>
                       <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
-                      <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id} style={{ marginTop: 8 }}>
-                        {busy === item.id ? 'Generating...' : 'Generate test cases'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id}>
+                          {busy === item.id ? 'Generating...' : 'Generate test cases'}
+                        </button>
+                        {userRole === 'admin' && (
+                          <button onClick={() => deleteRequirement(item.id)} disabled={busy === `delete-req-${item.id}`}>
+                            {busy === `delete-req-${item.id}` ? 'Deleting...' : 'Delete requirement'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </details>
                 ))}
@@ -527,9 +554,11 @@ export function Dashboard() {
                               <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
                                 {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
                               </button>
-                              <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
-                                {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}
-                              </button>
+                              {userRole === 'admin' && (
+                                <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
+                                  {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}
+                                </button>
+                              )}
                             </div>
                           </div>
                           );
@@ -590,11 +619,13 @@ export function Dashboard() {
                                 Started: {formatDateTime(item.started_at)} {item.finished_at && `| Finished: ${formatDateTime(item.finished_at)}`}
                               </div>
                               <div style={{ margin: '4px 0', fontSize: 13 }}>{item.summary_reason}</div>
-                              <div style={{ margin: '4px 0' }}>
-                                <button onClick={() => deleteExecution(item)} disabled={busy === `delete-run-${item.id}`}>
-                                  {busy === `delete-run-${item.id}` ? 'Deleting...' : 'Delete execution'}
-                                </button>
-                              </div>
+                              {userRole === 'admin' && (
+                                <div style={{ margin: '4px 0' }}>
+                                  <button onClick={() => deleteExecution(item)} disabled={busy === `delete-run-${item.id}`}>
+                                    {busy === `delete-run-${item.id}` ? 'Deleting...' : 'Delete execution'}
+                                  </button>
+                                </div>
+                              )}
                               <details>
                                 <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
                                 <ul>

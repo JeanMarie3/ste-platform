@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.core.database import dumps_json, get_connection, loads_json
+from app.schemas.auth import UserPublic, UserRecord
 from app.schemas.requirements import RequirementRead
 from app.schemas.testcases import TestCaseRead, TestRunRead
 
@@ -41,17 +42,25 @@ class RequirementRepository:
     def next_sequence_for_project(self, project_code: str) -> int:
         prefix = f"REQ-{project_code.upper()}-"
         with get_connection() as connection:
-            rows = connection.execute("SELECT id FROM requirements WHERE id LIKE ?", (f"{prefix}%",)).fetchall()
+            row = connection.execute(
+                "SELECT id FROM requirements WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+                (f"{prefix}%",),
+            ).fetchone()
 
-        max_sequence = 0
-        for row in rows:
-            requirement_id = row["id"]
-            if not requirement_id.startswith(prefix):
-                continue
-            suffix = requirement_id[len(prefix):]
-            if suffix.isdigit():
-                max_sequence = max(max_sequence, int(suffix))
-        return max_sequence + 1
+            if not row:
+                return 1
+
+            try:
+                seq_str = row["id"].split("-")[-1]
+                return int(seq_str) + 1
+            except ValueError:
+                return 1
+
+    def delete(self, requirement_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM requirements WHERE id = ?", (requirement_id,))
+            connection.commit()
+            return cursor.rowcount > 0
 
     def _map(self, row) -> RequirementRead:
         return RequirementRead(
@@ -125,6 +134,11 @@ class TestCaseRepository:
                 (item.review_status.value, dumps_json(item.metadata), item.updated_at.isoformat(), item.id),
             )
         return item
+
+    def delete_by_requirement_id(self, requirement_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM test_cases WHERE requirement_id = ?", (requirement_id,))
+        return cursor.rowcount > 0
 
     def delete(self, test_case_id: str) -> bool:
         with get_connection() as connection:
@@ -205,3 +219,95 @@ class TestRunRepository:
             finished_at=datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None,
             steps=loads_json(row["steps_json"]),
         )
+
+
+class AuthRepository:
+    def create(self, item: UserRecord) -> UserPublic:
+        with get_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO users (id, username, email, password_hash, password_salt, role, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item.id,
+                    item.username,
+                    item.email,
+                    item.password_hash,
+                    item.password_salt,
+                    item.role,
+                    item.created_at.isoformat(),
+                    item.updated_at.isoformat(),
+                ),
+            )
+        return self._map_public_row(
+            {
+                "id": item.id,
+                "username": item.username,
+                "email": item.email,
+                "role": item.role,
+                "created_at": item.created_at.isoformat(),
+                "updated_at": item.updated_at.isoformat(),
+            }
+        )
+
+    def list(self) -> list[UserPublic]:
+        with get_connection() as connection:
+            rows = connection.execute("SELECT id, username, email, role, created_at, updated_at FROM users ORDER BY created_at ASC").fetchall()
+        return [self._map_public_row(row) for row in rows]
+
+    def get_by_username(self, username: str) -> UserRecord | None:
+        with get_connection() as connection:
+            row = connection.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        return self._map_record_row(row) if row else None
+
+    def get_by_email(self, email: str) -> UserRecord | None:
+        with get_connection() as connection:
+            row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        return self._map_record_row(row) if row else None
+
+    def get_by_username_and_email(self, username: str, email: str) -> UserRecord | None:
+        with get_connection() as connection:
+            row = connection.execute("SELECT * FROM users WHERE username = ? AND email = ?", (username, email)).fetchone()
+        return self._map_record_row(row) if row else None
+
+    def update_password(self, user_id: str, password_hash: str, password_salt: str, updated_at: datetime) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
+                (password_hash, password_salt, updated_at.isoformat(), user_id),
+            )
+        return cursor.rowcount > 0
+
+    def count_by_role(self, role: str) -> int:
+        with get_connection() as connection:
+            row = connection.execute("SELECT COUNT(1) AS total FROM users WHERE role = ?", (role,)).fetchone()
+        return int(row["total"]) if row else 0
+
+    def delete_by_id(self, user_id: str) -> bool:
+        with get_connection() as connection:
+            cursor = connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        return cursor.rowcount > 0
+
+    def _map_public_row(self, row) -> UserPublic:
+        return UserPublic(
+            id=row["id"],
+            username=row["username"],
+            email=row["email"],
+            role=row["role"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    def _map_record_row(self, row) -> UserRecord:
+        return UserRecord(
+            id=row["id"],
+            username=row["username"],
+            email=row["email"],
+            role=row["role"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            password_hash=row["password_hash"],
+            password_salt=row["password_salt"],
+        )
+
