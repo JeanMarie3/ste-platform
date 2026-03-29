@@ -1,7 +1,7 @@
 import { Dashboard } from './pages/Dashboard';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { apiPost } from './api/client';
+import { apiGet, apiPost } from './api/client';
 import type { AuthMessage, AuthUser } from './types';
 
 const normalizeEmail = (value: string): string => value.trim().toLowerCase();
@@ -28,6 +28,38 @@ export default function App() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    const validateSessionUser = async () => {
+      try {
+        const users = await apiGet<AuthUser[]>('/auth/users');
+        const stillExists = users.some(
+          (item) => item.username === user.username && item.role === user.role && item.email === user.email,
+        );
+        if (!stillExists && !cancelled) {
+          sessionStorage.removeItem('ste.currentUser');
+          setUser(null);
+          setDeleteOpen(false);
+          setDeleteError('');
+          setDeletePassword('');
+          setDeleteConfirmText('');
+          setDeleteEmail('');
+        }
+      } catch {
+        // Keep the current session if auth API is temporarily unreachable.
+      }
+    };
+
+    validateSessionUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const handleLogin = (loggedInUser: AuthUser) => {
     setUser(loggedInUser);
