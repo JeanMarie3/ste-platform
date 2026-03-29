@@ -27,7 +27,7 @@ class AuthService:
             id=new_id("USR"),
             username=username,
             email=email,
-            role=payload.role,
+            role="standard",
             created_at=now,
             updated_at=now,
             password_hash=password_hash,

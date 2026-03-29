@@ -194,7 +194,6 @@ function AuthScreen({ onLogin }: {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'standard'>('standard');
   const [error, setError] = useState('');
   const [notification, setNotification] = useState('');
 
@@ -241,7 +240,6 @@ function AuthScreen({ onLogin }: {
           username,
           email: normalizedEmail,
           password,
-          role,
         });
         setNotification('Account created successfully. You can now log in.');
         setMode('login');
@@ -290,16 +288,6 @@ function AuthScreen({ onLogin }: {
           />
         )}
 
-        {mode === 'signup' && (
-          <select
-            value={role}
-            onChange={e => setRole(e.target.value as 'admin' | 'standard')}
-            style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }}
-          >
-            <option value="standard">Standard User</option>
-            <option value="admin">Admin User</option>
-          </select>
-        )}
 
         <input
           type="password"
