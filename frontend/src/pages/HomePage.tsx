@@ -18,6 +18,7 @@ export function HomePage({ onSignIn }: HomePageProps) {
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 20, fontWeight: 700 }}>Software Testing Engine</div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            <a href="#home" style={menuLinkStyle}>Home</a>
             <a href="#features" style={menuLinkStyle}>Features</a>
             <a href="#workflow" style={menuLinkStyle}>Workflow</a>
             <a href="#security" style={menuLinkStyle}>Security</a>
@@ -104,4 +105,3 @@ function WorkflowItem({ step, title, text }: { step: string; title: string; text
     </div>
   );
 }
-
