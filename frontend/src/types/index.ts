@@ -1,5 +1,11 @@
 export type Platform = 'web' | 'api' | 'database' | 'mobile' | 'desktop';
 
+export interface TestStepDefinition {
+  action: string;
+  target: string;
+  value?: string | null;
+}
+
 export interface Requirement {
   id: string;
   project_code: string;
@@ -21,6 +27,7 @@ export interface TestCase {
   platform: Platform;
   priority: string;
   review_status: string;
+  steps: TestStepDefinition[];
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
