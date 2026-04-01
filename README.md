@@ -15,7 +15,7 @@ Open the root folder `ste-platform` in IntelliJ IDEA.
 
 ## What is implemented now
 
-- SQLite-backed persistence in the backend
+- SQL-backed persistence in the backend (SQLite by default, PostgreSQL-ready)
 - requirement creation API
 - generated test cases by platform
 - review status updates
@@ -34,6 +34,23 @@ uvicorn app.main:app --reload
 ```
 
 Backend runs on `http://localhost:8000`.
+
+### Database configuration (recommended: PostgreSQL)
+
+For production, use PostgreSQL and set `DATABASE_URL` in your root `.env`:
+
+```dotenv
+DATABASE_URL=postgresql+psycopg://ste_user:ste_password@localhost:5432/ste_platform
+```
+
+If `DATABASE_URL` is not set, backend falls back to local SQLite at `backend/data/ste.db`.
+
+To migrate existing SQLite data to your configured `DATABASE_URL`:
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform\backend
+python -m scripts.migrate_sqlite_to_database --sqlite-path .\data\ste.db
+```
 
 ## Agent
 
@@ -141,5 +158,5 @@ Useful options:
 2. Add export to Excel and Word from the backend
 3. Add authentication and role-based access control
 4. Add artifact file storage instead of artifact URIs only
-5. Add PostgreSQL migration path for team deployment
+5. Add Alembic schema migrations and versioned rollout scripts
 6. Add mobile and database deep adapters

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiDelete, apiGet, apiPost } from '../api/client';
 import { Panel } from '../components/Panel';
@@ -35,6 +35,8 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [aiNote, setAiNote] = useState<string>('');
   const [aiApiKey, setAiApiKey] = useState<string>(() => localStorage.getItem('ste.openaiApiKey') ?? '');
   const [form, setForm] = useState(initialRequirementForm);
+  const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(initialSelectedPlatforms);
 
@@ -173,6 +175,21 @@ export function Dashboard({ userRole }: DashboardProps) {
 
   const getExecutionLabel = (index: number): string => `execution-${String(index + 1).padStart(2, '0')}`;
 
+  const latestRunByTestCaseId = useMemo(() => {
+    const latest: Record<string, TestRun> = {};
+    for (const run of runs) {
+      const current = latest[run.test_case_id];
+      if (!current) {
+        latest[run.test_case_id] = run;
+        continue;
+      }
+      if (new Date(run.started_at).getTime() > new Date(current.started_at).getTime()) {
+        latest[run.test_case_id] = run;
+      }
+    }
+    return latest;
+  }, [runs]);
+
   const refresh = async () => {
     const [requirementsData, testCasesData, runsData] = await Promise.all([
       apiGet<Requirement[]>('/requirements'),
@@ -195,6 +212,14 @@ export function Dashboard({ userRole }: DashboardProps) {
       localStorage.removeItem('ste.openaiApiKey');
     }
   }, [aiApiKey]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+    };
+  }, []);
 
   const aiHeaders = aiApiKey.trim() ? { 'X-OpenAI-Api-Key': aiApiKey.trim() } : undefined;
 
@@ -389,6 +414,65 @@ export function Dashboard({ userRole }: DashboardProps) {
     return sorted;
   }, [runsByTestCase, testCaseVersionById]);
 
+  const getTestCaseResultBadge = (testCaseId: string): { label: string; style: CSSProperties } => {
+    const latestRun = latestRunByTestCaseId[testCaseId];
+    if (!latestRun) {
+      return {
+        label: 'Not run',
+        style: { background: '#f2f4f7', color: '#475467' },
+      };
+    }
+
+    if (latestRun.status === 'passed') {
+      return {
+        label: 'Passed',
+        style: { background: '#e8f5e9', color: '#1b5e20' },
+      };
+    }
+
+    if (latestRun.status === 'failed') {
+      return {
+        label: 'Failed',
+        style: { background: '#ffebee', color: '#b71c1c' },
+      };
+    }
+
+    return {
+      label: latestRun.status,
+      style: { background: '#fff3cd', color: '#8a6d3b' },
+    };
+  };
+
+  const jumpToLatestExecution = (testCaseId: string): void => {
+    const latestRun = latestRunByTestCaseId[testCaseId];
+    if (!latestRun) return;
+
+    const runRow = document.getElementById(`execution-run-${latestRun.id}`);
+    const fallbackAnchor = document.getElementById('executions-panel-anchor');
+    const target = (runRow ?? fallbackAnchor) as HTMLElement | null;
+    if (!target) return;
+
+    // Open all parent detail sections so the target run is visible after scrolling.
+    let currentParent = target.parentElement;
+    while (currentParent) {
+      if (currentParent.tagName === 'DETAILS') {
+        (currentParent as HTMLDetailsElement).open = true;
+      }
+      currentParent = currentParent.parentElement;
+    }
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    setHighlightedRunId(latestRun.id);
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedRunId(null);
+      highlightTimerRef.current = null;
+    }, 2200);
+  };
+
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {error ? <div style={{ padding: 12, background: '#fdecec', border: '1px solid #f4b1b1', borderRadius: 8 }}>{error}</div> : null}
@@ -518,6 +602,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                       <div style={{ marginLeft: 40 }}>
                         {group.versions.map((item) => {
                           const parentReq = requirementById[item.requirement_id];
+                          const resultBadge = getTestCaseResultBadge(item.id);
 
                           return (
                           <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
@@ -542,9 +627,43 @@ export function Dashboard({ userRole }: DashboardProps) {
                             </div>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
                               <span>{item.platform} | {item.review_status}</span>
+                              {latestRunByTestCaseId[item.id] ? (
+                                <button
+                                  type="button"
+                                  onClick={() => jumpToLatestExecution(item.id)}
+                                  title="Jump to latest execution"
+                                  style={{
+                                    ...resultBadge.style,
+                                    fontSize: 11,
+                                    padding: '1px 8px',
+                                    borderRadius: 10,
+                                    textTransform: 'capitalize',
+                                    fontWeight: 600,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {resultBadge.label}
+                                </button>
+                              ) : (
+                                <span style={{ ...resultBadge.style, fontSize: 11, padding: '1px 8px', borderRadius: 10, textTransform: 'capitalize', fontWeight: 600 }}>
+                                  {resultBadge.label}
+                                </span>
+                              )}
                               {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
                             </div>
                             <div style={{ margin: '4px 0' }}>{item.objective}</div>
+                            <details style={{ marginTop: 6 }}>
+                              <summary style={{ cursor: 'pointer', fontSize: 13 }}>Test steps ({item.steps.length})</summary>
+                              <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 18 }}>
+                                {item.steps.map((step, index) => (
+                                  <li key={`${item.id}-step-${index}`}>
+                                    {step.action}:{step.target}
+                                    {step.value ? ` (${step.value})` : ''}
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
                               {reviewStatuses.map((status) => (
                                 <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
@@ -574,6 +693,7 @@ export function Dashboard({ userRole }: DashboardProps) {
 
         {/* ── Executions — grouped by test case ── */}
         <Panel title="Executions">
+          <div id="executions-panel-anchor" />
           {runs.length === 0 ? <p>No test runs yet.</p> : runsByTC.map((tcGroup) => {
             return (
               <details key={tcGroup.tcBase} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
@@ -611,9 +731,31 @@ export function Dashboard({ userRole }: DashboardProps) {
                             </div>
                           )}
 
-                          {[...versionGroup.runs].reverse().map((item, runIndex) => (
-                            <div key={item.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #e3e8ef' }}>
-                              <div><strong>{getExecutionLabel(versionGroup.runs.length - runIndex - 1)}</strong></div>
+                          {(() => {
+                            const runsOrderedOldestToNewest = [...versionGroup.runs].sort(
+                              (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
+                            );
+                            const executionOrderByRunId: Record<string, number> = {};
+                            runsOrderedOldestToNewest.forEach((run, index) => {
+                              executionOrderByRunId[run.id] = index + 1;
+                            });
+
+                            const runsNewestFirst = [...runsOrderedOldestToNewest].reverse();
+
+                            return runsNewestFirst.map((item) => (
+                            <div
+                              id={`execution-run-${item.id}`}
+                              key={item.id}
+                              style={{
+                                marginBottom: 14,
+                                paddingBottom: 14,
+                                borderBottom: highlightedRunId === item.id ? '2px solid #f79009' : '1px solid #e3e8ef',
+                                background: highlightedRunId === item.id ? '#fff9e6' : 'transparent',
+                                borderRadius: highlightedRunId === item.id ? 6 : 0,
+                                transition: 'background 220ms ease, border-color 220ms ease',
+                              }}
+                            >
+                              <div><strong>{getExecutionLabel((executionOrderByRunId[item.id] ?? 1) - 1)}</strong></div>
                               <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
                               <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
                                 Started: {formatDateTime(item.started_at)} {item.finished_at && `| Finished: ${formatDateTime(item.finished_at)}`}
@@ -637,7 +779,8 @@ export function Dashboard({ userRole }: DashboardProps) {
                                 </ul>
                               </details>
                             </div>
-                          ))}
+                            ));
+                          })()}
                         </div>
                       </details>
                     );

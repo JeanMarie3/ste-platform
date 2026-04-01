@@ -3,7 +3,7 @@ from urllib import error, request as urllib_request
 
 from app.core.config import settings
 from app.domain.enums import ExecutionStatus
-from app.repositories.sqlite_store import TestCaseRepository, TestRunRepository
+from app.repositories.sql_store import TestCaseRepository, TestRunRepository
 from app.schemas.common import new_id, utc_now
 from app.schemas.executions import StartExecutionRequest
 from app.schemas.testcases import StepExecutionRead, TestRunRead, Verdict

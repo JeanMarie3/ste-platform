@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ste-postgres
+    environment:
+      POSTGRES_DB: ste_platform
+      POSTGRES_USER: ste_user
+      POSTGRES_PASSWORD: ste_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ste_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ste_user -d ste_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  agent:
+    build:
+      context: ./agent
+    container_name: ste-agent
+    ports:
+      - "8010:8010"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8010/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: ste-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://ste_user:ste_password@postgres:5432/ste_platform
+      AGENT_BASE_URL: http://agent:8010
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_WEBHOOK_SECRET: ${OPENAI_WEBHOOK_SECRET:-}
+      BACKEND_PUBLIC_BASE_URL: ${BACKEND_PUBLIC_BASE_URL:-http://localhost:8000}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: ste-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+    ports:
+      - "5173:5173"
+
+volumes:
+  ste_postgres_data:
+

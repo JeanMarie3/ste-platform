@@ -1,5 +1,5 @@
 from app.domain.enums import PlatformType, ReviewStatus
-from app.repositories.sqlite_store import TestCaseRepository, TestRunRepository
+from app.repositories.sql_store import TestCaseRepository, TestRunRepository
 from app.schemas.common import new_id, utc_now
 from app.schemas.requirements import RequirementRead
 from app.schemas.testcases import AssertionRule, ReviewAction, TestCaseRead, TestStep
