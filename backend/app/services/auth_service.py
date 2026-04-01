@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import os
 
-from app.repositories.sqlite_store import AuthRepository
+from app.repositories.sql_store import AuthRepository
 from app.schemas.auth import DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, UserRecord
 from app.schemas.common import new_id, utc_now
 

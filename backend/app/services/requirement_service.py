@@ -1,4 +1,4 @@
-from app.repositories.sqlite_store import RequirementRepository
+from app.repositories.sql_store import RequirementRepository
 from app.schemas.common import utc_now
 from app.schemas.requirements import RequirementCreate, RequirementRead
 
@@ -31,6 +31,6 @@ class RequirementService:
         return self.repository.get(requirement_id)
 
     def delete_requirement(self, requirement_id: str) -> bool:
-        from app.repositories.sqlite_store import TestCaseRepository
+        from app.repositories.sql_store import TestCaseRepository
         TestCaseRepository().delete_by_requirement_id(requirement_id)
         return self.repository.delete(requirement_id)

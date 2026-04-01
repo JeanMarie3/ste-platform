@@ -1,29 +1,29 @@
 import json
-import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import os
 from typing import Iterator
 
 from app.core.config import settings
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Connection
+
+
+engine = create_engine(settings.database_url, future=True, pool_pre_ping=True)
 
 
 @contextmanager
-def get_connection() -> Iterator[sqlite3.Connection]:
-    connection = sqlite3.connect(settings.sqlite_path)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    try:
+def get_connection() -> Iterator[Connection]:
+    with engine.begin() as connection:
+        if connection.dialect.name == "sqlite":
+            connection.execute(text("PRAGMA foreign_keys = ON"))
         yield connection
-        connection.commit()
-    finally:
-        connection.close()
 
 
 def initialize_database() -> None:
     with get_connection() as connection:
-        connection.executescript(
+        statements = [
             """
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
@@ -34,8 +34,9 @@ def initialize_database() -> None:
                 role TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS requirements (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -47,8 +48,9 @@ def initialize_database() -> None:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS test_cases (
                 id TEXT PRIMARY KEY,
                 requirement_id TEXT NOT NULL,
@@ -64,8 +66,9 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(requirement_id) REFERENCES requirements(id) ON DELETE CASCADE
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS test_runs (
                 id TEXT PRIMARY KEY,
                 test_case_id TEXT NOT NULL,
@@ -73,14 +76,16 @@ def initialize_database() -> None:
                 environment TEXT NOT NULL,
                 status TEXT NOT NULL,
                 summary_reason TEXT NOT NULL,
-                confidence_score REAL NOT NULL,
+                confidence_score DOUBLE PRECISION NOT NULL,
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
                 steps_json TEXT NOT NULL,
                 FOREIGN KEY(test_case_id) REFERENCES test_cases(id) ON DELETE CASCADE
-            );
-            """
-        )
+            )
+            """,
+        ]
+        for statement in statements:
+            connection.execute(text(statement))
         _seed_default_users(connection)
 
 
@@ -89,12 +94,12 @@ def _hash_password(password: str, salt_hex: str) -> str:
     return digest.hex()
 
 
-def _seed_default_users(connection: sqlite3.Connection) -> None:
-    row = connection.execute("SELECT COUNT(1) AS total FROM users").fetchone()
-    if row and row["total"] > 0:
+def _seed_default_users(connection: Connection) -> None:
+    total_users = connection.execute(text("SELECT COUNT(1) AS total FROM users")).scalar_one()
+    if total_users > 0:
         return
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     defaults = [
         ("USR-admin", "admin", "admin@local.test", "admin", "admin"),
         ("USR-user", "user", "user@local.test", "user", "standard"),
@@ -104,11 +109,22 @@ def _seed_default_users(connection: sqlite3.Connection) -> None:
         salt_hex = os.urandom(16).hex()
         password_hash = _hash_password(password, salt_hex)
         connection.execute(
-            """
-            INSERT INTO users (id, username, email, password_hash, password_salt, role, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, username, email, password_hash, salt_hex, role, now, now),
+            text(
+                """
+                INSERT INTO users (id, username, email, password_hash, password_salt, role, created_at, updated_at)
+                VALUES (:id, :username, :email, :password_hash, :password_salt, :role, :created_at, :updated_at)
+                """
+            ),
+            {
+                "id": user_id,
+                "username": username,
+                "email": email,
+                "password_hash": password_hash,
+                "password_salt": salt_hex,
+                "role": role,
+                "created_at": now,
+                "updated_at": now,
+            },
         )
 
 

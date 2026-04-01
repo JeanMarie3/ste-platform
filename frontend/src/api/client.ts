@@ -1,4 +1,8 @@
-const API_BASE = 'http://localhost:8000/api/v1';
+const VITE_API_BASE_URL = (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL;
+
+const API_BASE = (
+  VITE_API_BASE_URL?.trim() || `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
+).replace(/\/$/, '');
 
 type RequestOptions = {
   headers?: Record<string, string>;
