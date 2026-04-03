@@ -32,6 +32,7 @@ class AIService:
         requirement_description: str,
         business_rules: list[str],
         platform: str,
+        target_url: str | None = None,
         api_key: str | None = None,
     ) -> dict[str, Any]:
         """Generate AI-powered test steps and assertions for a requirement + platform."""
@@ -40,6 +41,7 @@ class AIService:
             return {}
 
         rules_text = "\n".join(f"- {r}" for r in business_rules) if business_rules else "None"
+        target_text = target_url or "Not provided"
         prompt = f"""You are a senior software QA engineer. Generate a detailed, realistic test case for the requirement below targeting the {platform} platform.
 
 Requirement title: {requirement_title}
@@ -47,6 +49,7 @@ Requirement description: {requirement_description}
 Business rules:
 {rules_text}
 Platform: {platform}
+Target application URL: {target_text}
 
 Return ONLY a JSON object with this exact structure:
 {{

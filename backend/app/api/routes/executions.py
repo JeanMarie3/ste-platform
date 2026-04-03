@@ -28,6 +28,8 @@ def start_execution(payload_body: dict | str = Body(...)) -> TestRunRead:
         return service.start_execution(payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Test case not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[TestRunRead])

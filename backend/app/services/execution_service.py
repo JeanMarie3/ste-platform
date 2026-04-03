@@ -2,7 +2,7 @@ import json
 from urllib import error, request as urllib_request
 
 from app.core.config import settings
-from app.domain.enums import ExecutionStatus
+from app.domain.enums import ExecutionStatus, PlatformType
 from app.repositories.sql_store import TestCaseRepository, TestRunRepository
 from app.schemas.common import new_id, utc_now
 from app.schemas.executions import StartExecutionRequest
@@ -18,11 +18,18 @@ class ExecutionService:
         test_case = self.test_case_repository.get(request.test_case_id)
         if test_case is None:
             raise KeyError(request.test_case_id)
+
+        target_url = self._extract_target_url(test_case.metadata)
+        if test_case.platform == PlatformType.WEB and not target_url:
+            raise ValueError("This web test case has no target URL. Regenerate from a requirement with target_url.")
+
         started_at = utc_now()
         agent_payload = {
             "test_case_id": test_case.id,
             "platform": test_case.platform.value,
             "environment": request.environment,
+            "headless": request.headless,
+            "target_url": target_url,
             "steps": [step.model_dump() for step in test_case.steps],
             "assertions": [rule.model_dump() for rule in test_case.assertions],
             "title": test_case.title,
@@ -41,6 +48,15 @@ class ExecutionService:
             steps=[StepExecutionRead.model_validate(step) for step in response["steps"]],
         )
         return self.test_run_repository.create(run)
+
+    def _extract_target_url(self, metadata: dict | None) -> str | None:
+        if not isinstance(metadata, dict):
+            return None
+        value = metadata.get("target_url")
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     def list_runs(self) -> list[TestRunRead]:
         return self.test_run_repository.list()

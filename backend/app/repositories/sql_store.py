@@ -15,14 +15,15 @@ class RequirementRepository:
             connection.execute(
                 text(
                     """
-                    INSERT INTO requirements (id, title, description, platforms_json, priority, risk, business_rules_json, status, created_at, updated_at)
-                    VALUES (:id, :title, :description, :platforms_json, :priority, :risk, :business_rules_json, :status, :created_at, :updated_at)
+                    INSERT INTO requirements (id, title, description, target_url, platforms_json, priority, risk, business_rules_json, status, created_at, updated_at)
+                    VALUES (:id, :title, :description, :target_url, :platforms_json, :priority, :risk, :business_rules_json, :status, :created_at, :updated_at)
                     """
                 ),
                 {
                     "id": item.id,
                     "title": item.title,
                     "description": item.description,
+                    "target_url": item.target_url,
                     "platforms_json": dumps_json([platform.value for platform in item.platforms]),
                     "priority": item.priority,
                     "risk": item.risk,
@@ -78,6 +79,7 @@ class RequirementRepository:
             project_code=self._extract_project_code(row["id"]),
             title=row["title"],
             description=row["description"],
+            target_url=row.get("target_url"),
             platforms=loads_json(row["platforms_json"]),
             priority=row["priority"],
             risk=row["risk"],

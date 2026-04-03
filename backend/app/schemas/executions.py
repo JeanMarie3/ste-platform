@@ -7,3 +7,4 @@ class StartExecutionRequest(BaseModel):
     test_case_id: str
     environment: str = "local"
     agent_type: PlatformType
+    headless: bool = True
