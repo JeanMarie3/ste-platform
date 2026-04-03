@@ -59,10 +59,14 @@ cd agent
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python -m playwright install chromium
 uvicorn app.main:app --reload --port 8010
 ```
 
 Agent runs on `http://localhost:8010`.
+
+For web test execution, the agent now runs real browser steps via Playwright.
+You can choose headless or headed mode from the Dashboard before starting a web execution.
 
 ## Frontend
 

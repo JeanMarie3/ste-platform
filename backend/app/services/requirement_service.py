@@ -1,4 +1,5 @@
 from app.repositories.sql_store import RequirementRepository
+from app.domain.enums import PlatformType
 from app.schemas.common import utc_now
 from app.schemas.requirements import RequirementCreate, RequirementRead
 
@@ -10,10 +11,13 @@ class RequirementService:
     def create_requirement(self, payload: RequirementCreate) -> RequirementRead:
         now = utc_now()
         normalized_project_code = payload.project_code.strip().upper()
+        if PlatformType.WEB in payload.platforms and not payload.target_url:
+            raise ValueError("target_url is required when web platform is selected")
         sequence = self.repository.next_sequence_for_project(normalized_project_code)
         requirement_id = f"REQ-{normalized_project_code}-{sequence:04d}"
         payload_data = payload.model_dump()
         payload_data["project_code"] = normalized_project_code
+        payload_data["target_url"] = payload.target_url.strip() if payload.target_url else None
 
         item = RequirementRead(
             id=requirement_id,

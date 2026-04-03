@@ -11,6 +11,7 @@ export interface Requirement {
   project_code: string;
   title: string;
   description: string;
+  target_url?: string | null;
   platforms: Platform[];
   priority: string;
   risk: string;
@@ -59,6 +60,13 @@ export interface TestRun {
   steps: StepExecution[];
   started_at: string;
   finished_at: string | null;
+}
+
+export interface StartExecutionRequest {
+  test_case_id: string;
+  environment: string;
+  agent_type: Platform;
+  headless: boolean;
 }
 
 export interface AISuggestion {

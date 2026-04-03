@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import List
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.enums import PlatformType
 
@@ -14,6 +15,20 @@ class RequirementCreate(BaseModel):
     priority: str = "medium"
     risk: str = "medium"
     business_rules: List[str] = Field(default_factory=list)
+    target_url: str | None = None
+
+    @field_validator("target_url")
+    @classmethod
+    def validate_target_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("target_url must be a valid http/https URL")
+        return normalized
 
 
 class RequirementRead(RequirementCreate):

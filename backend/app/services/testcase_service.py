@@ -22,6 +22,7 @@ class TestCaseService:
                 requirement_description=requirement.description,
                 business_rules=requirement.business_rules,
                 platform=platform.value,
+                target_url=requirement.target_url,
                 api_key=api_key,
             )
 
@@ -30,7 +31,11 @@ class TestCaseService:
             ai_generated = bool(steps and assertions)
 
             if not ai_generated:
-                steps, assertions = self._starter_template(platform=platform, title=requirement.title)
+                steps, assertions = self._starter_template(
+                    platform=platform,
+                    title=requirement.title,
+                    target_url=requirement.target_url,
+                )
 
             title = ai_result.get("title") or f"{requirement.title} - core validation ({platform.value})"
             objective = ai_result.get("objective") or f"Validate {requirement.title} for {platform.value} platform."
@@ -50,6 +55,7 @@ class TestCaseService:
                     "business_rules": requirement.business_rules,
                     "source_requirement": requirement.title,
                     "ai_generated": ai_generated,
+                    "target_url": requirement.target_url,
                 },
                 created_at=now,
                 updated_at=now,
@@ -112,11 +118,12 @@ class TestCaseService:
             )
         return assertions
 
-    def _starter_template(self, platform: PlatformType, title: str) -> tuple[list[TestStep], list[AssertionRule]]:
+    def _starter_template(self, platform: PlatformType, title: str, target_url: str | None = None) -> tuple[list[TestStep], list[AssertionRule]]:
         if platform == PlatformType.WEB:
+            target = target_url or "https://example.test"
             return (
                 [
-                    TestStep(action="navigate", target="/login"),
+                    TestStep(action="navigate", target=target),
                     TestStep(action="input", target="username_field", value="test.user@example.com"),
                     TestStep(action="input", target="password_field", value="SuperSecret123"),
                     TestStep(action="click", target="login_button"),

@@ -3,7 +3,7 @@ import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from '
 import { apiDelete, apiGet, apiPost } from '../api/client';
 import { Panel } from '../components/Panel';
 import { formatDateTime } from '../utils/formatters';
-import type { AISuggestion, Platform, Requirement, TestCase, TestRun } from '../types';
+import type { AISuggestion, Platform, Requirement, StartExecutionRequest, TestCase, TestRun } from '../types';
 
 const priorities = ['low', 'medium', 'high'];
 const risks = ['low', 'medium', 'high'];
@@ -11,10 +11,20 @@ const reviewStatuses = ['under_review', 'approved', 'rejected', 'needs_update'];
 const platformOptions: Platform[] = ['web', 'api', 'database', 'mobile', 'desktop'];
 const initialSelectedPlatforms: Platform[] = [];
 
+const isValidHttpUrl = (value: string): boolean => {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 const initialRequirementForm = {
   project_code: '',
   title: '',
   description: '',
+  target_url: '',
   priority: 'high',
   risk: 'high',
   business_rules: '',
@@ -34,6 +44,7 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNote, setAiNote] = useState<string>('');
   const [aiApiKey, setAiApiKey] = useState<string>(() => localStorage.getItem('ste.openaiApiKey') ?? '');
+  const [executionHeadless, setExecutionHeadless] = useState<boolean>(true);
   const [form, setForm] = useState(initialRequirementForm);
   const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -241,6 +252,7 @@ export function Dashboard({ userRole }: DashboardProps) {
         project_code: form.project_code,
         title: suggestion.title,
         description: suggestion.description,
+        target_url: form.target_url,
         priority: suggestion.priority,
         risk: suggestion.risk,
         business_rules: suggestion.business_rules.join('\n'),
@@ -260,11 +272,21 @@ export function Dashboard({ userRole }: DashboardProps) {
       setError('Select at least one platform.');
       return;
     }
+    const normalizedTargetUrl = form.target_url.trim();
+    if (selectedPlatforms.includes('web') && !normalizedTargetUrl) {
+      setError('Target web application URL is required when web platform is selected.');
+      return;
+    }
+    if (normalizedTargetUrl && !isValidHttpUrl(normalizedTargetUrl)) {
+      setError('Target URL must be a valid http/https URL.');
+      return;
+    }
     setBusy('requirement');
     setError('');
     try {
       await apiPost<Requirement>('/requirements', {
         ...form,
+        target_url: normalizedTargetUrl || null,
         platforms: selectedPlatforms,
         business_rules: form.business_rules.split('\n').map((item) => item.trim()).filter(Boolean),
       });
@@ -327,11 +349,13 @@ export function Dashboard({ userRole }: DashboardProps) {
     setBusy(`run-${testCase.id}`);
     setError('');
     try {
-      await apiPost<TestRun>('/executions/start', {
+      const payload: StartExecutionRequest = {
         test_case_id: testCase.id,
         agent_type: testCase.platform,
         environment: 'local',
-      });
+        headless: testCase.platform === 'web' ? executionHeadless : true,
+      };
+      await apiPost<TestRun>('/executions/start', payload);
       await refresh();
     } catch (err) {
       setError(String(err));
@@ -512,6 +536,11 @@ export function Dashboard({ userRole }: DashboardProps) {
           />
           <input value={form.title} placeholder="Requirement title" required onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <textarea value={form.description} placeholder="Requirement description" rows={4} required onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <input
+            value={form.target_url}
+            placeholder="Target web URL (e.g. https://dev.educatifu.com/)"
+            onChange={(e) => setForm({ ...form, target_url: e.target.value })}
+          />
           <div style={{ display: 'flex', gap: 12 }}>
             <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
               {priorities.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -561,6 +590,11 @@ export function Dashboard({ userRole }: DashboardProps) {
                         Created: {formatDateTime(item.created_at)} {item.updated_at !== item.created_at && `| Updated: ${formatDateTime(item.updated_at)}`}
                       </div>
                       <div style={{ margin: '4px 0' }}>{item.description}</div>
+                      {item.target_url ? (
+                        <div style={{ margin: '4px 0', fontSize: 12 }}>
+                          Target: <a href={item.target_url} target="_blank" rel="noreferrer">{item.target_url}</a>
+                        </div>
+                      ) : null}
                       <div>{item.platforms.join(', ')} | {item.priority} / {item.risk}</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                         <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id}>
@@ -582,6 +616,19 @@ export function Dashboard({ userRole }: DashboardProps) {
 
         {/* ── Test Cases — grouped by Project -> TC base -> versions ── */}
         <Panel title="Test Cases">
+          <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={executionHeadless}
+                onChange={(event) => setExecutionHeadless(event.target.checked)}
+              />
+              Run web executions in headless mode
+            </label>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+              Turn this off for headed mode when running locally with a display.
+            </div>
+          </div>
           {testCases.length === 0 ? <p>No test cases yet.</p> : testCasesByProject.map((projectGroup) => (
             <details key={projectGroup.projectCode} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
               <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
@@ -653,6 +700,11 @@ export function Dashboard({ userRole }: DashboardProps) {
                               {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
                             </div>
                             <div style={{ margin: '4px 0' }}>{item.objective}</div>
+                            {typeof item.metadata?.target_url === 'string' && item.metadata.target_url ? (
+                              <div style={{ margin: '4px 0', fontSize: 12 }}>
+                                Target: <a href={item.metadata.target_url as string} target="_blank" rel="noreferrer">{item.metadata.target_url as string}</a>
+                              </div>
+                            ) : null}
                             <details style={{ marginTop: 6 }}>
                               <summary style={{ cursor: 'pointer', fontSize: 13 }}>Test steps ({item.steps.length})</summary>
                               <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 18 }}>

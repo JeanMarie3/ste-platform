@@ -41,6 +41,7 @@ def initialize_database() -> None:
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 description TEXT NOT NULL,
+                target_url TEXT,
                 platforms_json TEXT NOT NULL,
                 priority TEXT NOT NULL,
                 risk TEXT NOT NULL,
@@ -86,6 +87,7 @@ def initialize_database() -> None:
         ]
         for statement in statements:
             connection.execute(text(statement))
+        _ensure_requirements_target_url_column(connection)
         _seed_default_users(connection)
 
 
@@ -126,6 +128,38 @@ def _seed_default_users(connection: Connection) -> None:
                 "updated_at": now,
             },
         )
+
+
+def _ensure_requirements_target_url_column(connection: Connection) -> None:
+    # Keep old SQLite/Postgres databases compatible without breaking startup transactions.
+    if connection.dialect.name == "sqlite":
+        columns = connection.execute(text("PRAGMA table_info(requirements)")).mappings().all()
+        if any(column.get("name") == "target_url" for column in columns):
+            return
+        connection.execute(text("ALTER TABLE requirements ADD COLUMN target_url TEXT"))
+        return
+
+    if connection.dialect.name == "postgresql":
+        exists = connection.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'requirements' AND column_name = 'target_url'
+                LIMIT 1
+                """
+            )
+        ).first()
+        if exists:
+            return
+        connection.execute(text("ALTER TABLE requirements ADD COLUMN target_url TEXT"))
+        return
+
+    # Fallback for other SQL dialects.
+    try:
+        connection.execute(text("ALTER TABLE requirements ADD COLUMN target_url TEXT"))
+    except Exception:
+        return
 
 
 def dumps_json(value: object) -> str:

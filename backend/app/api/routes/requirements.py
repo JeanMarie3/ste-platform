@@ -23,7 +23,10 @@ def _normalize_api_key(raw_key: str | None) -> str | None:
 
 @router.post("", response_model=RequirementRead)
 def create_requirement(payload: RequirementCreate) -> RequirementRead:
-    return requirement_service.create_requirement(payload)
+    try:
+        return requirement_service.create_requirement(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[RequirementRead])
