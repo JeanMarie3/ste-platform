@@ -13,6 +13,17 @@ This repository is a working starter implementation of a web-based Software Test
 
 Open the root folder `ste-platform` in IntelliJ IDEA.
 
+## Local run without Docker
+
+If you want headed Playwright runs, start the stack locally instead of through Docker:
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform
+.\scripts\local-build-run.ps1
+```
+
+This compiles the backend, builds the frontend, installs local Playwright Chromium for the agent when needed, and starts the local services.
+
 ## What is implemented now
 
 - SQL-backed persistence in the backend (SQLite by default, PostgreSQL-ready)
@@ -77,6 +88,29 @@ npm run dev
 ```
 
 Frontend runs on `http://localhost:5173`.
+
+### Standalone React DevTools (optional)
+
+If you use `react-devtools` (the standalone app), enable the bridge in `frontend/.env.development`:
+
+```dotenv
+VITE_ENABLE_REACT_DEVTOOLS=true
+```
+
+Then restart Vite and run DevTools:
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform\frontend
+npm run dev
+```
+
+```powershell
+react-devtools
+```
+
+Notes:
+- this is injected only on `localhost` / `127.0.0.1`
+- keep it disabled for shared/production environments
 
 ## OpenAI webhook setup
 
@@ -155,6 +189,7 @@ cd C:\Users\Jean001\source\ste-platform
 Useful options:
 - skip installs: `./scripts/dev-up.ps1 -NoInstall`
 - force reinstall deps: `./scripts/dev-up.ps1 -ForceReinstall`
+- skip Playwright browser install: `./scripts/dev-up.ps1 -SkipBrowserInstall`
 
 ## Suggested next implementation steps
 

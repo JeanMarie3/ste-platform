@@ -184,7 +184,7 @@ export function Dashboard({ userRole }: DashboardProps) {
       .sort((a, b) => a.projectCode.localeCompare(b.projectCode));
   }, [testCases, requirementById, testCaseVersionById]);
 
-  const getExecutionLabel = (index: number): string => `execution-${String(index + 1).padStart(2, '0')}`;
+  const getExecutionLabel = (runOrder: number): string => `execution-${String(Math.max(runOrder, 1)).padStart(2, '0')}`;
 
   const latestRunByTestCaseId = useMemo(() => {
     const latest: Record<string, TestRun> = {};
@@ -461,10 +461,40 @@ export function Dashboard({ userRole }: DashboardProps) {
       };
     }
 
+    if (latestRun.status === 'blocked') {
+      return {
+        label: 'Blocked',
+        style: { background: '#fff7e6', color: '#9a6700' },
+      };
+    }
+
+    if (latestRun.status === 'inconclusive') {
+      return {
+        label: 'Inconclusive',
+        style: { background: '#f2f4f7', color: '#344054' },
+      };
+    }
+
+    if (latestRun.status === 'suspicious') {
+      return {
+        label: 'Suspicious',
+        style: { background: '#fef3c7', color: '#92400e' },
+      };
+    }
+
     return {
       label: latestRun.status,
       style: { background: '#fff3cd', color: '#8a6d3b' },
     };
+  };
+
+  const getExecutionStatusColor = (status: string): string => {
+    if (status === 'passed') return '#1b5e20';
+    if (status === 'failed') return '#b42318';
+    if (status === 'blocked') return '#9a6700';
+    if (status === 'inconclusive') return '#344054';
+    if (status === 'suspicious') return '#92400e';
+    return '#344054';
   };
 
   const jumpToLatestExecution = (testCaseId: string): void => {
@@ -802,13 +832,29 @@ export function Dashboard({ userRole }: DashboardProps) {
                                 marginBottom: 14,
                                 paddingBottom: 14,
                                 borderBottom: highlightedRunId === item.id ? '2px solid #f79009' : '1px solid #e3e8ef',
-                                background: highlightedRunId === item.id ? '#fff9e6' : 'transparent',
+                                background:
+                                  highlightedRunId === item.id
+                                    ? '#fff9e6'
+                                    : item.status === 'failed'
+                                      ? '#fff1f1'
+                                      : item.status === 'blocked'
+                                        ? '#fff8e1'
+                                        : item.status === 'inconclusive'
+                                          ? '#f8fafc'
+                                          : item.status === 'suspicious'
+                                            ? '#fff7e6'
+                                        : 'transparent',
                                 borderRadius: highlightedRunId === item.id ? 6 : 0,
                                 transition: 'background 220ms ease, border-color 220ms ease',
                               }}
                             >
-                              <div><strong>{getExecutionLabel((executionOrderByRunId[item.id] ?? 1) - 1)}</strong></div>
-                              <div>{item.status} | Confidence: {item.confidence_score.toFixed(2)}</div>
+                              <div><strong>{getExecutionLabel(executionOrderByRunId[item.id] ?? 0)}</strong></div>
+                              <div style={{ color: getExecutionStatusColor(item.status), fontWeight: 600 }}>
+                                {item.status} | Confidence: {item.confidence_score.toFixed(2)}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#475467', marginBottom: 2 }}>
+                                Mode: {item.run_mode === 'headed' ? 'headed' : 'headless'}
+                              </div>
                               <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
                                 Started: {formatDateTime(item.started_at)} {item.finished_at && `| Finished: ${formatDateTime(item.finished_at)}`}
                               </div>
@@ -824,8 +870,44 @@ export function Dashboard({ userRole }: DashboardProps) {
                                 <summary style={{ cursor: 'pointer', fontSize: 13 }}>Step details</summary>
                                 <ul>
                                   {item.steps.map((step) => (
-                                    <li key={`${item.id}-${step.step_number}`}>
-                                      {step.action} {'→'} {step.verdict.status} ({step.verdict.reason})
+                                    <li
+                                      key={`${item.id}-${step.step_number}`}
+                                      style={{
+                                        marginBottom: 8,
+                                        color:
+                                          step.verdict.status === 'failed'
+                                            ? '#b42318'
+                                            : step.verdict.status === 'blocked'
+                                              ? '#9a6700'
+                                              : step.verdict.status === 'inconclusive'
+                                                ? '#344054'
+                                                : step.verdict.status === 'suspicious'
+                                                  ? '#92400e'
+                                                  : undefined,
+                                      }}
+                                    >
+                                      <div>
+                                        {step.action} {'→'} <strong>{step.verdict.status}</strong>
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: 12,
+                                          color:
+                                            step.verdict.status === 'failed'
+                                              ? '#b42318'
+                                              : step.verdict.status === 'blocked'
+                                                ? '#9a6700'
+                                                : step.verdict.status === 'inconclusive'
+                                                  ? '#344054'
+                                                  : step.verdict.status === 'suspicious'
+                                                    ? '#92400e'
+                                                    : '#6f7c8a',
+                                        }}
+                                      >
+                                        {step.verdict.status === 'failed' || step.verdict.status === 'blocked' || step.verdict.status === 'suspicious' || step.verdict.status === 'inconclusive'
+                                          ? `Error: ${step.verdict.reason}`
+                                          : step.verdict.reason}
+                                      </div>
                                     </li>
                                   ))}
                                 </ul>

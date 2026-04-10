@@ -200,8 +200,8 @@ class TestRunRepository:
             connection.execute(
                 text(
                     """
-                    INSERT INTO test_runs (id, test_case_id, agent_type, environment, status, summary_reason, confidence_score, started_at, finished_at, steps_json)
-                    VALUES (:id, :test_case_id, :agent_type, :environment, :status, :summary_reason, :confidence_score, :started_at, :finished_at, :steps_json)
+                    INSERT INTO test_runs (id, test_case_id, agent_type, environment, run_mode, status, summary_reason, confidence_score, started_at, finished_at, steps_json)
+                    VALUES (:id, :test_case_id, :agent_type, :environment, :run_mode, :status, :summary_reason, :confidence_score, :started_at, :finished_at, :steps_json)
                     """
                 ),
                 {
@@ -209,6 +209,7 @@ class TestRunRepository:
                     "test_case_id": item.test_case_id,
                     "agent_type": item.agent_type.value,
                     "environment": item.environment,
+                    "run_mode": item.run_mode,
                     "status": item.status.value,
                     "summary_reason": item.summary_reason,
                     "confidence_score": item.confidence_score,
@@ -254,6 +255,7 @@ class TestRunRepository:
             test_case_id=row["test_case_id"],
             agent_type=row["agent_type"],
             environment=row["environment"],
+            run_mode=row.get("run_mode") or "headless",
             status=row["status"],
             summary_reason=row["summary_reason"],
             confidence_score=row["confidence_score"],

@@ -6,7 +6,7 @@ from app.domain.enums import ExecutionStatus, PlatformType
 from app.repositories.sql_store import TestCaseRepository, TestRunRepository
 from app.schemas.common import new_id, utc_now
 from app.schemas.executions import StartExecutionRequest
-from app.schemas.testcases import StepExecutionRead, TestRunRead, Verdict
+from app.schemas.testcases import StepExecutionRead, TestRunRead
 
 
 class ExecutionService:
@@ -19,33 +19,47 @@ class ExecutionService:
         if test_case is None:
             raise KeyError(request.test_case_id)
 
-        target_url = self._extract_target_url(test_case.metadata)
-        if test_case.platform == PlatformType.WEB and not target_url:
-            raise ValueError("This web test case has no target URL. Regenerate from a requirement with target_url.")
-
         started_at = utc_now()
-        agent_payload = {
-            "test_case_id": test_case.id,
-            "platform": test_case.platform.value,
-            "environment": request.environment,
-            "headless": request.headless,
-            "target_url": target_url,
-            "steps": [step.model_dump() for step in test_case.steps],
-            "assertions": [rule.model_dump() for rule in test_case.assertions],
-            "title": test_case.title,
-        }
-        response = self._call_agent(agent_payload)
+        run_mode = "headless" if request.headless else "headed"
+
+        try:
+            target_url = self._extract_target_url(test_case.metadata)
+            if test_case.platform == PlatformType.WEB and not target_url:
+                response = self._local_blocked_response(
+                    "This web test case has no target URL. Regenerate from a requirement with target_url."
+                )
+            else:
+                agent_payload = {
+                    "test_case_id": test_case.id,
+                    "platform": test_case.platform.value,
+                    "environment": request.environment,
+                    "headless": request.headless,
+                    "target_url": target_url,
+                    "steps": [step.model_dump() for step in test_case.steps],
+                    "assertions": [rule.model_dump() for rule in test_case.assertions],
+                    "title": test_case.title,
+                }
+                response = self._call_agent(agent_payload)
+        except Exception as exc:
+            response = self._local_failed_response(f"Execution dispatch failed: {self._safe_error_text(exc)}")
+
+        response_status = str(response.get("status") or ExecutionStatus.FAILED.value)
+        response_message = str(response.get("message") or "Execution completed with no message")
+        response_confidence = float(response.get("confidence") or 0.65)
+        response_steps = response.get("steps") if isinstance(response.get("steps"), list) else []
+
         run = TestRunRead(
             id=new_id("RUN"),
             test_case_id=test_case.id,
             agent_type=request.agent_type,
             environment=request.environment,
-            status=response["status"],
-            summary_reason=response["message"],
-            confidence_score=response["confidence"],
+            run_mode=run_mode,
+            status=response_status,
+            summary_reason=response_message,
+            confidence_score=response_confidence,
             started_at=started_at,
             finished_at=utc_now(),
-            steps=[StepExecutionRead.model_validate(step) for step in response["steps"]],
+            steps=[StepExecutionRead.model_validate(step) for step in response_steps],
         )
         return self.test_run_repository.create(run)
 
@@ -75,7 +89,7 @@ class ExecutionService:
             method="POST",
         )
         try:
-            with urllib_request.urlopen(req, timeout=20) as response:
+            with urllib_request.urlopen(req, timeout=60) as response:
                 return json.loads(response.read().decode("utf-8"))
         except error.URLError:
             return {
@@ -97,3 +111,52 @@ class ExecutionService:
                     }
                 ],
             }
+
+    def _local_blocked_response(self, reason: str) -> dict:
+        return {
+            "status": ExecutionStatus.BLOCKED.value,
+            "message": reason,
+            "confidence": 0.98,
+            "steps": [
+                {
+                    "step_number": 1,
+                    "action": "pre_execution_validation",
+                    "expected_result": "Execution can be dispatched",
+                    "actual_result": reason,
+                    "verdict": {
+                        "status": ExecutionStatus.BLOCKED.value,
+                        "reason": reason,
+                        "confidence": 0.98,
+                    },
+                    "evidence": [],
+                }
+            ],
+        }
+
+    def _local_failed_response(self, reason: str) -> dict:
+        return {
+            "status": ExecutionStatus.FAILED.value,
+            "message": reason,
+            "confidence": 0.65,
+            "steps": [
+                {
+                    "step_number": 1,
+                    "action": "dispatch_to_agent",
+                    "expected_result": "Agent accepts and executes run",
+                    "actual_result": reason,
+                    "verdict": {
+                        "status": ExecutionStatus.FAILED.value,
+                        "reason": reason,
+                        "confidence": 0.65,
+                    },
+                    "evidence": [],
+                }
+            ],
+        }
+
+    def _safe_error_text(self, exc: Exception) -> str:
+        text = str(exc).strip()
+        if text:
+            return text
+        return f"{exc.__class__.__name__} (no details)"
+

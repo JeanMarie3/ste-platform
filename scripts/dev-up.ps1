@@ -1,6 +1,7 @@
 param(
     [switch]$NoInstall,
     [switch]$ForceReinstall,
+    [switch]$SkipBrowserInstall,
     [int]$TimeoutSeconds = 90
 )
 
@@ -65,6 +66,42 @@ function Ensure-FrontendDeps {
     }
 }
 
+function Ensure-PlaywrightChromium {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonExe,
+        [Parameter(Mandatory = $true)][string]$ServiceDir,
+        [switch]$SkipInstall,
+        [switch]$Reinstall
+    )
+
+    if ($SkipInstall) {
+        return
+    }
+
+    $markerPath = Join-Path $ServiceDir '.playwright-chromium-installed'
+    if ($Reinstall -or -not (Test-Path $markerPath)) {
+        Write-Host 'Installing Playwright Chromium browser for local agent runs'
+        & $PythonExe -m playwright install chromium | Out-Null
+        Set-Content -Path $markerPath -Value (Get-Date -Format o) -Encoding UTF8
+    }
+}
+
+function Assert-LocalPortsFree {
+    param([Parameter(Mandatory = $true)][int[]]$Ports)
+
+    foreach ($port in $Ports) {
+        $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $listener) {
+            continue
+        }
+
+        $owner = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+        $ownerText = if ($null -ne $owner) { "$($owner.ProcessName) (PID $($owner.Id))" } else { "PID $($listener.OwningProcess)" }
+
+        throw "Port $port is already in use by $ownerText. Stop Docker stack (docker compose down) or the local process before running dev-up."
+    }
+}
+
 function Start-TrackedProcess {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -86,6 +123,15 @@ function Start-TrackedProcess {
         -PassThru
 
     Write-Host "Started $Name (PID: $($process.Id))"
+
+    Start-Sleep -Milliseconds 800
+    if ($process.HasExited) {
+        $stderrTail = ''
+        if (Test-Path $stderrPath) {
+            $stderrTail = (Get-Content -Path $stderrPath -Tail 20 -ErrorAction SilentlyContinue) -join "`n"
+        }
+        throw "$Name exited immediately after start. Check $stderrPath. $stderrTail"
+    }
 
     [pscustomobject]@{
         name = $Name
@@ -117,8 +163,11 @@ function Wait-ForHttp {
 Assert-CommandAvailable -Name 'python'
 Assert-CommandAvailable -Name 'npm'
 
+Assert-LocalPortsFree -Ports @(8000, 8010, 5173)
+
 $backendPython = Ensure-Venv -ServiceDir $backendDir -RequirementsFile (Join-Path $backendDir 'requirements.txt') -SkipInstall:$NoInstall -Reinstall:$ForceReinstall
 $agentPython = Ensure-Venv -ServiceDir $agentDir -RequirementsFile (Join-Path $agentDir 'requirements.txt') -SkipInstall:$NoInstall -Reinstall:$ForceReinstall
+Ensure-PlaywrightChromium -PythonExe $agentPython -ServiceDir $agentDir -SkipInstall:$SkipBrowserInstall -Reinstall:$ForceReinstall
 Ensure-FrontendDeps -Dir $frontendDir -SkipInstall:$NoInstall -Reinstall:$ForceReinstall
 
 $npmCommand = (Get-Command npm.cmd -ErrorAction SilentlyContinue)

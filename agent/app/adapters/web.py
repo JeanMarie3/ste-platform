@@ -1,6 +1,8 @@
+import tempfile
+import logging
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
-from pathlib import Path
 
 from app.adapters.base import BaseAdapter
 
@@ -13,30 +15,72 @@ except Exception:  # pragma: no cover - dependency/runtime availability is envir
 
 
 class WebAdapter(BaseAdapter):
+    logger = logging.getLogger(__name__)
+
     def prepare(self) -> str:
         return "Prepared browser session"
 
     def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         if sync_playwright is None:
-            return self._synthetic_fallback(payload, reason="Playwright is not installed in agent runtime")
+            return self._synthetic_fallback(payload, reason="Playwright is not installed in agent runtime", status="blocked")
 
         target_url = str(payload.get("target_url") or "").strip()
         headless = bool(payload.get("headless", True))
+        run_mode = "headless" if headless else "headed"
         test_case_id = str(payload.get("test_case_id") or "unknown")
 
-        artifacts_dir = Path("/tmp/ste-artifacts")
+        if not headless and self._running_in_container():
+            return self._blocked_result(
+                payload,
+                reason="Headed browser mode is not available inside the Docker container. Run locally to see the browser window.",
+            )
+
+        artifacts_dir = Path(tempfile.gettempdir()) / "ste-artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=headless, slow_mo=250 if not headless else 0)
-                context = browser.new_context(ignore_https_errors=True)
-                page = context.new_page()
+                try:
+                    browser = playwright.chromium.launch(
+                        headless=headless,
+                        slow_mo=250 if not headless else 0,
+                        args=["--no-sandbox", "--disable-setuid-sandbox"],
+                    )
+                except Exception as exc:
+                    self.logger.exception("Web execution failed during browser launch")
+                    status = "blocked" if isinstance(exc, NotImplementedError) else "failed"
+                    return self._synthetic_fallback(
+                        payload,
+                        reason=f"Browser launch failed in {run_mode} mode: {self._format_exception(exc)}",
+                        status=status,
+                    )
+
+                try:
+                    context = browser.new_context(ignore_https_errors=True)
+                    page = context.new_page()
+                except Exception as exc:
+                    browser.close()
+                    self.logger.exception("Web execution failed during browser context setup")
+                    status = "blocked" if isinstance(exc, NotImplementedError) else "failed"
+                    return self._synthetic_fallback(
+                        payload,
+                        reason=f"Browser context setup failed in {run_mode} mode: {self._format_exception(exc)}",
+                        status=status,
+                    )
 
                 steps: list[dict[str, Any]] = []
 
-                if target_url:
-                    page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
+                try:
+                    if target_url:
+                        page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
+                except Exception as exc:
+                    browser.close()
+                    self.logger.exception("Web execution failed during initial navigation")
+                    return self._synthetic_fallback(
+                        payload,
+                        reason=f"Navigation failed in {run_mode} mode: {self._format_exception(exc)}",
+                        status="failed",
+                    )
 
                 for index, step in enumerate(payload.get("steps", []), start=1):
                     steps.append(
@@ -62,18 +106,26 @@ class WebAdapter(BaseAdapter):
                         )
                     )
 
-                if not headless:
-                    page.wait_for_timeout(1200)
-                browser.close()
+                try:
+                    if not headless:
+                        page.wait_for_timeout(1200)
+                finally:
+                    browser.close()
 
-            has_failed = any(step["verdict"]["status"] == "failed" for step in steps)
-            status = "failed" if has_failed else "passed"
+            status = self._derive_run_status(steps)
             message = (
                 f"Web flow executed against {target_url} in {'headless' if headless else 'headed'} mode"
                 if target_url
                 else f"Web flow executed in {'headless' if headless else 'headed'} mode"
             )
-            confidence = 0.9 if status == "passed" else 0.65
+            confidence_by_status = {
+                "passed": 0.9,
+                "blocked": 0.98,
+                "failed": 0.65,
+                "inconclusive": 0.75,
+                "suspicious": 0.75,
+            }
+            confidence = confidence_by_status.get(status, 0.75)
             return {
                 "status": status,
                 "message": message,
@@ -81,7 +133,13 @@ class WebAdapter(BaseAdapter):
                 "steps": steps,
             }
         except Exception as exc:
-            return self._synthetic_fallback(payload, reason=f"Playwright execution failed: {exc}")
+            status = "blocked" if isinstance(exc, NotImplementedError) else "failed"
+            formatted = self._format_exception(exc)
+            self.logger.exception("Web execution failed with Playwright exception")
+            return self._synthetic_fallback(payload, reason=f"Playwright execution failed in {run_mode} mode: {formatted}", status=status)
+
+    def _running_in_container(self) -> bool:
+        return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
 
     def _run_step(
         self,
@@ -116,8 +174,7 @@ class WebAdapter(BaseAdapter):
                 actual = f"Clicked {target}"
             elif action in {"verify_element", "validate_feature"}:
                 locator = self._resolve_locator(page, target)
-                if not locator.first.is_visible(timeout=8000):
-                    raise RuntimeError(f"Element not visible: {target}")
+                locator.first.wait_for(state="visible", timeout=8000)
                 actual = f"Verified element {target}"
             else:
                 actual = f"Action {action} is not explicitly mapped; marked as executed"
@@ -152,8 +209,7 @@ class WebAdapter(BaseAdapter):
                 actual = f"URL contains {expected_value}"
             elif assertion_type == "element_visible":
                 locator = self._resolve_locator(page, target)
-                if not locator.first.is_visible(timeout=8000):
-                    raise RuntimeError(f"Element not visible: {target}")
+                locator.first.wait_for(state="visible", timeout=8000)
                 actual = f"Element visible: {target}"
             else:
                 actual = f"Assertion {assertion_type} not explicitly mapped; marked as passed"
@@ -171,12 +227,28 @@ class WebAdapter(BaseAdapter):
             return self._failed_step(step_number, action_label, expected, str(exc), page, test_case_id, artifacts_dir)
 
     def _resolve_locator(self, page, target: str):
+        normalized = target.strip().lower()
+
         if target.startswith("css="):
             return page.locator(target[4:])
         if target.startswith("xpath="):
             return page.locator(f"xpath={target[6:]}")
         if target.startswith("text="):
             return page.get_by_text(target[5:], exact=False)
+        if normalized in {"header", "site header"}:
+            return page.locator("header, [role='banner']")
+        if normalized in {"footer", "site footer"}:
+            return page.locator("footer, [role='contentinfo']")
+        if normalized in {"main_content", "main content", "main", "content area", "content"}:
+            return page.locator("main, [role='main'], #main_content, #main-content, .main-content, .content, .content-area")
+        if normalized.endswith("button") or " button" in normalized:
+            label = normalized.replace("button", "").strip()
+            if label:
+                return page.get_by_role("button", name=label, exact=False)
+        if normalized.endswith("field") or normalized.endswith("input") or normalized.endswith("text area") or normalized.endswith("textarea"):
+            label = normalized.replace("field", "").replace("input", "").replace("text area", "").replace("textarea", "").strip()
+            if label:
+                return page.get_by_role("textbox", name=label, exact=False)
         return page.locator(target)
 
     def _capture_step_artifact(self, page, test_case_id: str, step_number: int, artifacts_dir: Path) -> str:
@@ -199,17 +271,30 @@ class WebAdapter(BaseAdapter):
             "evidence": evidence,
         }
 
-    def _synthetic_fallback(self, payload: dict[str, Any], reason: str) -> dict[str, Any]:
+    def _derive_run_status(self, steps: list[dict[str, Any]]) -> str:
+        verdicts = {str(step.get("verdict", {}).get("status") or "").strip().lower() for step in steps}
+
+        if "failed" in verdicts:
+            return "failed"
+        if "blocked" in verdicts:
+            return "blocked"
+        if "suspicious" in verdicts:
+            return "suspicious"
+        if "inconclusive" in verdicts:
+            return "inconclusive"
+        return "passed"
+
+    def _format_exception(self, exc: Exception) -> str:
+        text = str(exc).strip()
+        if text:
+            return text
+        return f"{exc.__class__.__name__} (no details)"
+
+    def _synthetic_fallback(self, payload: dict[str, Any], reason: str, status: str = "failed") -> dict[str, Any]:
         steps = []
         for index, step in enumerate(payload.get("steps", []), start=1):
-            suspicious = step.get("action") == "validate_feature"
-            status = "suspicious" if suspicious else "passed"
-            step_reason = (
-                "Core path executed, but human-like UI judgement still needs richer visual rules"
-                if suspicious
-                else "Synthetic web step completed"
-            )
-            target_text = step["target"]
+            step_reason = f"Playwright execution unavailable: {reason}"
+            target_text = str(step.get("target") or "n/a")
             target_url = str(payload.get("target_url") or "").strip()
             if step.get("action") == "navigate" and target_url:
                 target_text = target_url
@@ -217,17 +302,43 @@ class WebAdapter(BaseAdapter):
             steps.append(
                 {
                     "step_number": index,
-                    "action": f"{step['action']}:{target_text}",
+                    "action": f"{step.get('action', 'perform_step')}:{target_text}",
                     "expected_result": "Step completes without blocking error",
                     "actual_result": step_reason,
-                    "verdict": {"status": status, "reason": step_reason, "confidence": 0.78 if suspicious else 0.9},
+                    "verdict": {"status": status, "reason": step_reason, "confidence": 0.5},
                     "evidence": [f"artifact://{payload['test_case_id']}/web-step-{index}.png"],
                 }
             )
-        overall = "suspicious" if any(s["verdict"]["status"] == "suspicious" for s in steps) else "passed"
+        confidence = 0.98 if status == "blocked" else 0.65
         return {
-            "status": overall,
+            "status": status,
             "message": f"Web execution used synthetic fallback ({reason})",
-            "confidence": 0.79 if overall == "suspicious" else 0.91,
-            "steps": steps,
+            "confidence": confidence,
+            "steps": steps or [
+                {
+                    "step_number": 1,
+                    "action": "dispatch_to_agent",
+                    "expected_result": "Agent executes browser flow",
+                    "actual_result": reason,
+                    "verdict": {"status": status, "reason": reason, "confidence": confidence},
+                    "evidence": [],
+                }
+            ],
+        }
+
+    def _blocked_result(self, payload: dict[str, Any], reason: str, steps: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        return {
+            "status": "blocked",
+            "message": reason,
+            "confidence": 0.98,
+            "steps": steps or [
+                {
+                    "step_number": 1,
+                    "action": "dispatch_to_agent",
+                    "expected_result": "Agent executes browser flow",
+                    "actual_result": reason,
+                    "verdict": {"status": "blocked", "reason": reason, "confidence": 0.98},
+                    "evidence": [],
+                }
+            ],
         }

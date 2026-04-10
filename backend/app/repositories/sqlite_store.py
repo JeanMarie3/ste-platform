@@ -168,14 +168,15 @@ class TestRunRepository:
         with get_connection() as connection:
             connection.execute(
                 """
-                INSERT INTO test_runs (id, test_case_id, agent_type, environment, status, summary_reason, confidence_score, started_at, finished_at, steps_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO test_runs (id, test_case_id, agent_type, environment, run_mode, status, summary_reason, confidence_score, started_at, finished_at, steps_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.id,
                     item.test_case_id,
                     item.agent_type.value,
                     item.environment,
+                    item.run_mode,
                     item.status.value,
                     item.summary_reason,
                     item.confidence_score,
@@ -212,6 +213,7 @@ class TestRunRepository:
             test_case_id=row["test_case_id"],
             agent_type=row["agent_type"],
             environment=row["environment"],
+            run_mode=row["run_mode"] if "run_mode" in row.keys() else "headless",
             status=row["status"],
             summary_reason=row["summary_reason"],
             confidence_score=row["confidence_score"],

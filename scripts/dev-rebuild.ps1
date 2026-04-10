@@ -13,6 +13,17 @@ Write-Host "Step 1/4: Stopping dev environment..." -ForegroundColor Yellow
 try {
     Set-Location "C:\Users\Jean001\source\ste-platform"
     & .\scripts\dev-stop.ps1
+
+    # Prevent Docker/local port conflicts that keep headed mode blocked.
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        $runningServices = & docker compose ps --status running --services 2>$null
+        if ($runningServices) {
+            Write-Host "[INFO] Docker services detected. Stopping docker stack for local headed runs..." -ForegroundColor Yellow
+            & docker compose down | Out-Null
+            Write-Host "[OK] Docker stack stopped" -ForegroundColor Green
+        }
+    }
+
     Write-Host "[OK] Dev environment stopped" -ForegroundColor Green
 } catch {
     Write-Host "[ERROR] Failed to stop dev environment: $_" -ForegroundColor Red

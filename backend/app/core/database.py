@@ -75,6 +75,7 @@ def initialize_database() -> None:
                 test_case_id TEXT NOT NULL,
                 agent_type TEXT NOT NULL,
                 environment TEXT NOT NULL,
+                run_mode TEXT NOT NULL DEFAULT 'headless',
                 status TEXT NOT NULL,
                 summary_reason TEXT NOT NULL,
                 confidence_score DOUBLE PRECISION NOT NULL,
@@ -88,6 +89,7 @@ def initialize_database() -> None:
         for statement in statements:
             connection.execute(text(statement))
         _ensure_requirements_target_url_column(connection)
+        _ensure_test_runs_run_mode_column(connection)
         _seed_default_users(connection)
 
 
@@ -158,6 +160,36 @@ def _ensure_requirements_target_url_column(connection: Connection) -> None:
     # Fallback for other SQL dialects.
     try:
         connection.execute(text("ALTER TABLE requirements ADD COLUMN target_url TEXT"))
+    except Exception:
+        return
+
+
+def _ensure_test_runs_run_mode_column(connection: Connection) -> None:
+    if connection.dialect.name == "sqlite":
+        columns = connection.execute(text("PRAGMA table_info(test_runs)")).mappings().all()
+        if any(column.get("name") == "run_mode" for column in columns):
+            return
+        connection.execute(text("ALTER TABLE test_runs ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'headless'"))
+        return
+
+    if connection.dialect.name == "postgresql":
+        exists = connection.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'test_runs' AND column_name = 'run_mode'
+                LIMIT 1
+                """
+            )
+        ).first()
+        if exists:
+            return
+        connection.execute(text("ALTER TABLE test_runs ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'headless'"))
+        return
+
+    try:
+        connection.execute(text("ALTER TABLE test_runs ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'headless'"))
     except Exception:
         return
 
