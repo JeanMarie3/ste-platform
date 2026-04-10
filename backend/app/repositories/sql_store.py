@@ -296,6 +296,31 @@ class TestRunRepository:
             )
         return result.rowcount
 
+    def update_result(self, item: TestRunRead) -> bool:
+        with get_connection() as connection:
+            result = connection.execute(
+                text(
+                    """
+                    UPDATE test_runs
+                    SET status = :status,
+                        summary_reason = :summary_reason,
+                        confidence_score = :confidence_score,
+                        finished_at = :finished_at,
+                        steps_json = :steps_json
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": item.id,
+                    "status": item.status.value,
+                    "summary_reason": item.summary_reason,
+                    "confidence_score": item.confidence_score,
+                    "finished_at": item.finished_at.isoformat() if item.finished_at else None,
+                    "steps_json": dumps_json([step.model_dump() for step in item.steps]),
+                },
+            )
+        return result.rowcount > 0
+
     def _map(self, row: Mapping[str, Any]) -> TestRunRead:
         return TestRunRead(
             id=row["id"],
