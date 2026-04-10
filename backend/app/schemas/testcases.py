@@ -35,6 +35,15 @@ class TestCaseRead(BaseModel):
     updated_at: datetime
 
 
+class TestCaseUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=3)
+    objective: str | None = Field(default=None, min_length=5)
+    priority: str | None = None
+    steps: List[TestStep] | None = None
+    assertions: List[AssertionRule] | None = None
+    tags: List[str] | None = None
+
+
 class ReviewAction(BaseModel):
     @model_validator(mode="before")
     @classmethod

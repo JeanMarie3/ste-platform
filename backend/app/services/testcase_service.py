@@ -2,7 +2,7 @@ from app.domain.enums import PlatformType, ReviewStatus
 from app.repositories.sql_store import TestCaseRepository, TestRunRepository
 from app.schemas.common import new_id, utc_now
 from app.schemas.requirements import RequirementRead
-from app.schemas.testcases import AssertionRule, ReviewAction, TestCaseRead, TestStep
+from app.schemas.testcases import AssertionRule, ReviewAction, TestCaseRead, TestCaseUpdate, TestStep
 from app.services.ai_service import AIService
 
 
@@ -69,6 +69,20 @@ class TestCaseService:
 
     def get_test_case(self, test_case_id: str) -> TestCaseRead | None:
         return self.repository.get(test_case_id)
+
+    def update_test_case(self, test_case_id: str, payload: TestCaseUpdate) -> TestCaseRead | None:
+        current = self.repository.get(test_case_id)
+        if current is None:
+            return None
+
+        updates = payload.model_dump(exclude_unset=True)
+        updated = current.model_copy(
+            update={
+                **updates,
+                "updated_at": utc_now(),
+            }
+        )
+        return self.repository.update(updated)
 
     def review_test_case(self, test_case_id: str, action: ReviewAction) -> TestCaseRead | None:
         current = self.repository.get(test_case_id)

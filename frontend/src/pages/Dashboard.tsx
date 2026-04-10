@@ -1,9 +1,18 @@
 import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
-import { apiDelete, apiGet, apiPost } from '../api/client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
 import { Panel } from '../components/Panel';
 import { formatDateTime } from '../utils/formatters';
-import type { AISuggestion, Platform, Requirement, StartExecutionRequest, TestCase, TestRun } from '../types';
+import type {
+  AISuggestion,
+  Platform,
+  Requirement,
+  RequirementUpdateRequest,
+  StartExecutionRequest,
+  TestCase,
+  TestCaseUpdateRequest,
+  TestRun,
+} from '../types';
 
 const priorities = ['low', 'medium', 'high'];
 const risks = ['low', 'medium', 'high'];
@@ -135,6 +144,14 @@ export function Dashboard({ userRole }: DashboardProps) {
     });
     return labels;
   }, [testCasesByRequirement, requirementNumberById]);
+
+  const testCaseIdByVersionLabel = useMemo(() => {
+    const labels: Record<string, string> = {};
+    Object.entries(testCaseVersionById).forEach(([testCaseId, label]) => {
+      labels[label] = testCaseId;
+    });
+    return labels;
+  }, [testCaseVersionById]);
 
   const testCasesByProject = useMemo(() => {
     const grouped: Array<{ projectCode: string; totalCases: number; tcGroups: Array<{ tcBase: string; versions: TestCase[] }> }> = [];
@@ -313,6 +330,33 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   };
 
+  const editRequirement = async (item: Requirement) => {
+    const title = window.prompt('Edit requirement title', item.title);
+    if (title === null) return;
+    const description = window.prompt('Edit requirement description', item.description);
+    if (description === null) return;
+    const targetUrlDefault = item.target_url ?? '';
+    const target_url = window.prompt('Edit target URL (leave empty to clear)', targetUrlDefault);
+    if (target_url === null) return;
+
+    const payload: RequirementUpdateRequest = {
+      title: title.trim(),
+      description: description.trim(),
+      target_url: target_url.trim() ? target_url.trim() : null,
+    };
+
+    setBusy(`edit-req-${item.id}`);
+    setError('');
+    try {
+      await apiPatch<Requirement>(`/requirements/${item.id}`, payload);
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const deleteRequirement = async (requirementId: string) => {
     const confirmed = window.confirm(`Delete requirement ${requirementId}? This will also delete all test cases and executions under it.`);
     if (!confirmed) return;
@@ -337,6 +381,29 @@ export function Dashboard({ userRole }: DashboardProps) {
         review_status,
         comment: `Updated to ${review_status} in dashboard`,
       });
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const editTestCase = async (item: TestCase) => {
+    const title = window.prompt('Edit test case title', item.title);
+    if (title === null) return;
+    const objective = window.prompt('Edit test case objective', item.objective);
+    if (objective === null) return;
+
+    const payload: TestCaseUpdateRequest = {
+      title: title.trim(),
+      objective: objective.trim(),
+    };
+
+    setBusy(`edit-${item.id}`);
+    setError('');
+    try {
+      await apiPatch<TestCase>(`/testcases/${item.id}`, payload);
       await refresh();
     } catch (err) {
       setError(String(err));
@@ -497,13 +564,26 @@ export function Dashboard({ userRole }: DashboardProps) {
     return '#344054';
   };
 
-  const getStepVerdictColor = (status: string): string => {
-    if (status === 'passed') return '#1b5e20';
-    if (status === 'failed') return '#b42318';
-    if (status === 'blocked') return '#9a6700';
-    if (status === 'inconclusive') return '#344054';
-    if (status === 'suspicious') return '#92400e';
-    return '#344054';
+  const getStepVerdictStyle = (status: string): CSSProperties => {
+    if (status === 'passed') return { color: '#1b5e20' };
+    if (status === 'failed') return { color: '#b42318' };
+    if (status === 'blocked') return { color: '#9a6700' };
+    return { color: 'inherit' };
+  };
+
+  const jumpToTestCase = (testCaseId: string): void => {
+    const testCaseRow = document.getElementById(`test-case-card-${testCaseId}`);
+    if (!testCaseRow) return;
+
+    let currentParent = testCaseRow.parentElement;
+    while (currentParent) {
+      if (currentParent.tagName === 'DETAILS') {
+        (currentParent as HTMLDetailsElement).open = true;
+      }
+      currentParent = currentParent.parentElement;
+    }
+
+    testCaseRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const jumpToLatestExecution = (testCaseId: string): void => {
@@ -639,6 +719,9 @@ export function Dashboard({ userRole }: DashboardProps) {
                         <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id}>
                           {busy === item.id ? 'Generating...' : 'Generate test cases'}
                         </button>
+                        <button onClick={() => editRequirement(item)} disabled={busy === `edit-req-${item.id}`}>
+                          {busy === `edit-req-${item.id}` ? 'Saving...' : 'Edit requirement'}
+                        </button>
                         {userRole === 'admin' && (
                           <button onClick={() => deleteRequirement(item.id)} disabled={busy === `delete-req-${item.id}`}>
                             {busy === `delete-req-${item.id}` ? 'Deleting...' : 'Delete requirement'}
@@ -691,7 +774,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                           const resultBadge = getTestCaseResultBadge(item.id);
 
                           return (
-                          <div key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
+                          <div id={`test-case-card-${item.id}`} key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
                             <div><strong>{testCaseVersionById[item.id] ?? 'TC-0000-v1'}</strong></div>
                             <div style={{ fontSize: 12, color: '#6f7c8a', marginBottom: 2 }}>
                               {item.title}
@@ -764,6 +847,9 @@ export function Dashboard({ userRole }: DashboardProps) {
                               <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
                                 {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
                               </button>
+                              <button onClick={() => editTestCase(item)} disabled={busy === `edit-${item.id}`}>
+                                {busy === `edit-${item.id}` ? 'Saving...' : 'Edit test case'}
+                              </button>
                               {userRole === 'admin' && (
                                 <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
                                   {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}
@@ -794,14 +880,37 @@ export function Dashboard({ userRole }: DashboardProps) {
 
                 <div style={{ marginLeft: 40 }}>
                   {tcGroup.versions.map((versionGroup) => {
-                    const parentTC = testCaseById[Object.entries(testCaseVersionById).find(([, label]) => label === versionGroup.tcVersion)?.[0] || ''];
+                    const parentTestCaseId = testCaseIdByVersionLabel[versionGroup.tcVersion];
+                    const parentTC = parentTestCaseId ? testCaseById[parentTestCaseId] : undefined;
                     const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
 
                     return (
                       <details key={versionGroup.tcVersion} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
                         <summary style={{ cursor: 'pointer', listStylePosition: 'inside', fontSize: 11 }}>
                           <span style={{ fontWeight: 500 }}>
-                            {versionGroup.tcVersion} ({versionGroup.runs.length} run{versionGroup.runs.length > 1 ? 's' : ''})
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (parentTestCaseId) {
+                                  jumpToTestCase(parentTestCaseId);
+                                }
+                              }}
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                color: '#1565c0',
+                                cursor: parentTestCaseId ? 'pointer' : 'default',
+                                padding: 0,
+                                fontWeight: 600,
+                                textDecoration: parentTestCaseId ? 'underline' : 'none',
+                              }}
+                              title={parentTestCaseId ? 'Jump to related test case' : 'Related test case not found'}
+                            >
+                              {versionGroup.tcVersion}
+                            </button>{' '}
+                            ({versionGroup.runs.length} run{versionGroup.runs.length > 1 ? 's' : ''})
                           </span>
                         </summary>
 
@@ -881,36 +990,15 @@ export function Dashboard({ userRole }: DashboardProps) {
                                   {item.steps.map((step) => (
                                     <li
                                       key={`${item.id}-${step.step_number}`}
-                                      style={{
-                                        marginBottom: 8,
-                                        color:
-                                          step.verdict.status === 'failed'
-                                            ? '#b42318'
-                                            : step.verdict.status === 'blocked'
-                                              ? '#9a6700'
-                                              : step.verdict.status === 'inconclusive'
-                                                ? '#344054'
-                                                : step.verdict.status === 'suspicious'
-                                                  ? '#92400e'
-                                                  : undefined,
-                                      }}
+                                      style={{ marginBottom: 8 }}
                                     >
                                       <div>
-                                        {step.action} {'→'} <strong style={{ color: getStepVerdictColor(step.verdict.status) }}>{step.verdict.status}</strong>
+                                        {step.action} {'→'} <strong style={getStepVerdictStyle(step.verdict.status)}>{step.verdict.status}</strong>
                                       </div>
                                       <div
                                         style={{
                                           fontSize: 12,
-                                          color:
-                                            step.verdict.status === 'failed'
-                                              ? '#b42318'
-                                              : step.verdict.status === 'blocked'
-                                                ? '#9a6700'
-                                                : step.verdict.status === 'inconclusive'
-                                                  ? '#344054'
-                                                  : step.verdict.status === 'suspicious'
-                                                    ? '#92400e'
-                                                    : '#6f7c8a',
+                                          color: '#6f7c8a',
                                         }}
                                       >
                                         {step.verdict.status === 'failed' || step.verdict.status === 'blocked' || step.verdict.status === 'suspicious' || step.verdict.status === 'inconclusive'
