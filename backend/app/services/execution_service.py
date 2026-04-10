@@ -1,4 +1,7 @@
 import json
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 from urllib import error, request as urllib_request
 
 from app.core.config import settings
@@ -11,8 +14,10 @@ from app.schemas.testcases import StepExecutionRead, TestRunRead
 
 class ExecutionService:
     def __init__(self) -> None:
+        self.logger = logging.getLogger(__name__)
         self.test_case_repository = TestCaseRepository()
         self.test_run_repository = TestRunRepository()
+        self._executor = ThreadPoolExecutor(max_workers=max(2, int(os.getenv("EXECUTION_MAX_PARALLEL", "4"))))
 
     def start_execution(self, request: StartExecutionRequest) -> TestRunRead:
         test_case = self.test_case_repository.get(request.test_case_id)
@@ -21,6 +26,25 @@ class ExecutionService:
 
         started_at = utc_now()
         run_mode = "headless" if request.headless else "headed"
+
+        run = TestRunRead(
+            id=new_id("RUN"),
+            test_case_id=test_case.id,
+            agent_type=request.agent_type,
+            environment=request.environment,
+            run_mode=run_mode,
+            status=ExecutionStatus.RUNNING,
+            summary_reason="Execution started",
+            confidence_score=0.0,
+            started_at=started_at,
+            finished_at=None,
+            steps=[],
+        )
+        created_run = self.test_run_repository.create(run)
+        self._executor.submit(self._complete_run, created_run, request, test_case)
+        return created_run
+
+    def _complete_run(self, run: TestRunRead, request: StartExecutionRequest, test_case) -> None:
 
         try:
             target_url = self._extract_target_url(test_case.metadata)
@@ -47,21 +71,23 @@ class ExecutionService:
         response_message = str(response.get("message") or "Execution completed with no message")
         response_confidence = float(response.get("confidence") or 0.65)
         response_steps = response.get("steps") if isinstance(response.get("steps"), list) else []
+        try:
+            final_status = ExecutionStatus(response_status)
+        except ValueError:
+            final_status = ExecutionStatus.FAILED
 
-        run = TestRunRead(
-            id=new_id("RUN"),
-            test_case_id=test_case.id,
-            agent_type=request.agent_type,
-            environment=request.environment,
-            run_mode=run_mode,
-            status=response_status,
-            summary_reason=response_message,
-            confidence_score=response_confidence,
-            started_at=started_at,
-            finished_at=utc_now(),
-            steps=[StepExecutionRead.model_validate(step) for step in response_steps],
+        updated_run = run.model_copy(
+            update={
+                "status": final_status,
+                "summary_reason": response_message,
+                "confidence_score": response_confidence,
+                "finished_at": utc_now(),
+                "steps": self._parse_response_steps(response_steps),
+            }
         )
-        return self.test_run_repository.create(run)
+
+        if not self.test_run_repository.update_result(updated_run):
+            self.logger.warning("Run %s could not be updated after execution completion", run.id)
 
     def _extract_target_url(self, metadata: dict | None) -> str | None:
         if not isinstance(metadata, dict):
@@ -159,4 +185,13 @@ class ExecutionService:
         if text:
             return text
         return f"{exc.__class__.__name__} (no details)"
+
+    def _parse_response_steps(self, response_steps: list) -> list[StepExecutionRead]:
+        parsed_steps: list[StepExecutionRead] = []
+        for step in response_steps:
+            try:
+                parsed_steps.append(StepExecutionRead.model_validate(step))
+            except Exception as exc:
+                self.logger.warning("Skipping malformed step payload from agent: %s", self._safe_error_text(exc))
+        return parsed_steps
 

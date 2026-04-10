@@ -15,6 +15,7 @@ New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 $backendDir = Join-Path $repoRoot 'backend'
 $agentDir = Join-Path $repoRoot 'agent'
 $frontendDir = Join-Path $repoRoot 'frontend'
+$defaultPostgresUrl = 'postgresql+psycopg://ste_user:ste_password@localhost:5432/ste_platform'
 
 function Assert-CommandAvailable {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -160,8 +161,49 @@ function Wait-ForHttp {
     return $false
 }
 
+function Ensure-PostgresService {
+    param([int]$TimeoutSec = 60)
+
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Write-Host '[WARN] Docker is not available. Local backend may fail if DATABASE_URL points to PostgreSQL.' -ForegroundColor Yellow
+        return
+    }
+
+    $postgresRunning = (& docker compose ps --status running --services postgres 2>$null) -join "`n"
+    if ($postgresRunning -notmatch 'postgres') {
+        Write-Host 'Starting Docker postgres service for local data parity...'
+        & docker compose up -d postgres | Out-Null
+    }
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $health = (& docker inspect -f "{{.State.Health.Status}}" ste-postgres 2>$null).Trim()
+            if ($health -eq 'healthy') {
+                Write-Host '[OK] Postgres is healthy' -ForegroundColor Green
+                return
+            }
+        }
+        catch {
+            # keep waiting until timeout
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    throw 'Postgres service did not become healthy in time. Run: docker compose up -d postgres'
+}
+
 Assert-CommandAvailable -Name 'python'
 Assert-CommandAvailable -Name 'npm'
+
+if ([string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
+    $env:DATABASE_URL = $defaultPostgresUrl
+    Write-Host "Using default DATABASE_URL for local/dev parity: $($env:DATABASE_URL)"
+}
+
+if ($env:DATABASE_URL -match '^postgresql(\+[^:]+)?:') {
+    Ensure-PostgresService
+}
 
 Assert-LocalPortsFree -Ports @(8000, 8010, 5173)
 

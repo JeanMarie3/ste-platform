@@ -24,6 +24,26 @@ cd C:\Users\Jean001\source\ste-platform
 
 This compiles the backend, builds the frontend, installs local Playwright Chromium for the agent when needed, and starts the local services.
 
+### Keep local and Docker data synchronized
+
+To see the same requirements/test cases in local and Docker, both must use the same PostgreSQL DB.
+
+1. Ensure root `.env` contains:
+
+```dotenv
+DATABASE_URL=postgresql+psycopg://ste_user:ste_password@localhost:5432/ste_platform
+AGENT_BASE_URL=http://localhost:8010
+```
+
+2. Keep only postgres running in Docker when you run local services:
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform
+docker compose up -d postgres
+```
+
+`./scripts/dev-up.ps1` now auto-starts `postgres` when `DATABASE_URL` is PostgreSQL.
+
 ## What is implemented now
 
 - SQL-backed persistence in the backend (SQLite by default, PostgreSQL-ready)

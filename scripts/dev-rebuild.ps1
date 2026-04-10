@@ -15,12 +15,14 @@ try {
     & .\scripts\dev-stop.ps1
 
     # Prevent Docker/local port conflicts that keep headed mode blocked.
+    # Keep postgres running so local and docker share the same database.
     if (Get-Command docker -ErrorAction SilentlyContinue) {
         $runningServices = & docker compose ps --status running --services 2>$null
         if ($runningServices) {
-            Write-Host "[INFO] Docker services detected. Stopping docker stack for local headed runs..." -ForegroundColor Yellow
-            & docker compose down | Out-Null
-            Write-Host "[OK] Docker stack stopped" -ForegroundColor Green
+            $servicesToStop = @('backend', 'agent', 'frontend')
+            Write-Host "[INFO] Stopping Docker app services to avoid local port conflicts (postgres will stay up)..." -ForegroundColor Yellow
+            & docker compose stop @servicesToStop | Out-Null
+            Write-Host "[OK] Docker app services stopped; postgres kept running" -ForegroundColor Green
         }
     }
 

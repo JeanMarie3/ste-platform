@@ -514,6 +514,20 @@ export function Dashboard({ userRole }: DashboardProps) {
       };
     }
 
+    if (latestRun.status === 'running') {
+      return {
+        label: 'Running',
+        style: { background: '#eaf2ff', color: '#1d4ed8' },
+      };
+    }
+
+    if (latestRun.status === 'pending') {
+      return {
+        label: 'Pending',
+        style: { background: '#eff6ff', color: '#1e40af' },
+      };
+    }
+
     if (latestRun.status === 'passed') {
       return {
         label: 'Passed',
@@ -556,6 +570,8 @@ export function Dashboard({ userRole }: DashboardProps) {
   };
 
   const getExecutionStatusColor = (status: string): string => {
+    if (status === 'running') return '#1d4ed8';
+    if (status === 'pending') return '#1e40af';
     if (status === 'passed') return '#1b5e20';
     if (status === 'failed') return '#b42318';
     if (status === 'blocked') return '#9a6700';
@@ -568,6 +584,8 @@ export function Dashboard({ userRole }: DashboardProps) {
     if (status === 'passed') return { color: '#1b5e20' };
     if (status === 'failed') return { color: '#b42318' };
     if (status === 'blocked') return { color: '#9a6700' };
+    if (status === 'running') return { color: '#1d4ed8' };
+    if (status === 'pending') return { color: '#1e40af' };
     return { color: 'inherit' };
   };
 
@@ -772,6 +790,8 @@ export function Dashboard({ userRole }: DashboardProps) {
                         {group.versions.map((item) => {
                           const parentReq = requirementById[item.requirement_id];
                           const resultBadge = getTestCaseResultBadge(item.id);
+                          const latestRunStatus = latestRunByTestCaseId[item.id]?.status;
+                          const isExecutionInProgress = latestRunStatus === 'running' || latestRunStatus === 'pending';
 
                           return (
                           <div id={`test-case-card-${item.id}`} key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
@@ -844,8 +864,8 @@ export function Dashboard({ userRole }: DashboardProps) {
                                   {status}
                                 </button>
                               ))}
-                              <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved'}>
-                                {busy === `run-${item.id}` ? 'Running...' : 'Start execution'}
+                              <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved' || isExecutionInProgress}>
+                                {busy === `run-${item.id}` || isExecutionInProgress ? 'Running...' : 'Start execution'}
                               </button>
                               <button onClick={() => editTestCase(item)} disabled={busy === `edit-${item.id}`}>
                                 {busy === `edit-${item.id}` ? 'Saving...' : 'Edit test case'}
