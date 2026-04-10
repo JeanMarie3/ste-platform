@@ -497,6 +497,15 @@ export function Dashboard({ userRole }: DashboardProps) {
     return '#344054';
   };
 
+  const getStepVerdictColor = (status: string): string => {
+    if (status === 'passed') return '#1b5e20';
+    if (status === 'failed') return '#b42318';
+    if (status === 'blocked') return '#9a6700';
+    if (status === 'inconclusive') return '#344054';
+    if (status === 'suspicious') return '#92400e';
+    return '#344054';
+  };
+
   const jumpToLatestExecution = (testCaseId: string): void => {
     const latestRun = latestRunByTestCaseId[testCaseId];
     if (!latestRun) return;
@@ -887,7 +896,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                                       }}
                                     >
                                       <div>
-                                        {step.action} {'→'} <strong>{step.verdict.status}</strong>
+                                        {step.action} {'→'} <strong style={{ color: getStepVerdictColor(step.verdict.status) }}>{step.verdict.status}</strong>
                                       </div>
                                       <div
                                         style={{
