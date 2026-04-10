@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Body, HTTPException, Response, status
 from pydantic import ValidationError
 
-from app.schemas.testcases import ReviewAction, TestCaseRead
+from app.schemas.testcases import ReviewAction, TestCaseRead, TestCaseUpdate
 from app.services.testcase_service import TestCaseService
 
 router = APIRouter(prefix="/testcases", tags=["testcases"])
@@ -18,6 +18,14 @@ def list_test_cases() -> list[TestCaseRead]:
 @router.get("/{test_case_id}", response_model=TestCaseRead)
 def get_test_case(test_case_id: str) -> TestCaseRead:
     item = service.get_test_case(test_case_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Test case not found")
+    return item
+
+
+@router.patch("/{test_case_id}", response_model=TestCaseRead)
+def update_test_case(test_case_id: str, payload: TestCaseUpdate) -> TestCaseRead:
+    item = service.update_test_case(test_case_id, payload)
     if item is None:
         raise HTTPException(status_code=404, detail="Test case not found")
     return item

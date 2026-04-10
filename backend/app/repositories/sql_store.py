@@ -73,6 +73,39 @@ class RequirementRepository:
             )
             return result.rowcount > 0
 
+    def update(self, item: RequirementRead) -> RequirementRead:
+        with get_connection() as connection:
+            connection.execute(
+                text(
+                    """
+                    UPDATE requirements
+                    SET title = :title,
+                        description = :description,
+                        target_url = :target_url,
+                        platforms_json = :platforms_json,
+                        priority = :priority,
+                        risk = :risk,
+                        business_rules_json = :business_rules_json,
+                        status = :status,
+                        updated_at = :updated_at
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "description": item.description,
+                    "target_url": item.target_url,
+                    "platforms_json": dumps_json([platform.value for platform in item.platforms]),
+                    "priority": item.priority,
+                    "risk": item.risk,
+                    "business_rules_json": dumps_json(item.business_rules),
+                    "status": item.status,
+                    "updated_at": item.updated_at.isoformat(),
+                },
+            )
+        return item
+
     def _map(self, row: Mapping[str, Any]) -> RequirementRead:
         return RequirementRead(
             id=row["id"],
@@ -147,12 +180,26 @@ class TestCaseRepository:
                 text(
                     """
                     UPDATE test_cases
-                    SET review_status = :review_status, metadata_json = :metadata_json, updated_at = :updated_at
+                    SET title = :title,
+                        objective = :objective,
+                        priority = :priority,
+                        review_status = :review_status,
+                        steps_json = :steps_json,
+                        assertions_json = :assertions_json,
+                        tags_json = :tags_json,
+                        metadata_json = :metadata_json,
+                        updated_at = :updated_at
                     WHERE id = :id
                     """
                 ),
                 {
+                    "title": item.title,
+                    "objective": item.objective,
+                    "priority": item.priority,
                     "review_status": item.review_status.value,
+                    "steps_json": dumps_json([step.model_dump() for step in item.steps]),
+                    "assertions_json": dumps_json([rule.model_dump() for rule in item.assertions]),
+                    "tags_json": dumps_json(item.tags),
                     "metadata_json": dumps_json(item.metadata),
                     "updated_at": item.updated_at.isoformat(),
                     "id": item.id,

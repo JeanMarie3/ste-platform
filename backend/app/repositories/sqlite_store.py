@@ -11,13 +11,14 @@ class RequirementRepository:
         with get_connection() as connection:
             connection.execute(
                 """
-                INSERT INTO requirements (id, title, description, platforms_json, priority, risk, business_rules_json, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO requirements (id, title, description, target_url, platforms_json, priority, risk, business_rules_json, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.id,
                     item.title,
                     item.description,
+                    item.target_url,
                     dumps_json([platform.value for platform in item.platforms]),
                     item.priority,
                     item.risk,
@@ -62,12 +63,36 @@ class RequirementRepository:
             connection.commit()
             return cursor.rowcount > 0
 
+    def update(self, item: RequirementRead) -> RequirementRead:
+        with get_connection() as connection:
+            connection.execute(
+                """
+                UPDATE requirements
+                SET title = ?, description = ?, target_url = ?, platforms_json = ?, priority = ?, risk = ?, business_rules_json = ?, status = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    item.title,
+                    item.description,
+                    item.target_url,
+                    dumps_json([platform.value for platform in item.platforms]),
+                    item.priority,
+                    item.risk,
+                    dumps_json(item.business_rules),
+                    item.status,
+                    item.updated_at.isoformat(),
+                    item.id,
+                ),
+            )
+        return item
+
     def _map(self, row) -> RequirementRead:
         return RequirementRead(
             id=row["id"],
             project_code=self._extract_project_code(row["id"]),
             title=row["title"],
             description=row["description"],
+            target_url=row["target_url"] if "target_url" in row.keys() else None,
             platforms=loads_json(row["platforms_json"]),
             priority=row["priority"],
             risk=row["risk"],
@@ -128,10 +153,21 @@ class TestCaseRepository:
             connection.execute(
                 """
                 UPDATE test_cases
-                SET review_status = ?, metadata_json = ?, updated_at = ?
+                SET title = ?, objective = ?, priority = ?, review_status = ?, steps_json = ?, assertions_json = ?, tags_json = ?, metadata_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (item.review_status.value, dumps_json(item.metadata), item.updated_at.isoformat(), item.id),
+                (
+                    item.title,
+                    item.objective,
+                    item.priority,
+                    item.review_status.value,
+                    dumps_json([step.model_dump() for step in item.steps]),
+                    dumps_json([rule.model_dump() for rule in item.assertions]),
+                    dumps_json(item.tags),
+                    dumps_json(item.metadata),
+                    item.updated_at.isoformat(),
+                    item.id,
+                ),
             )
         return item
 

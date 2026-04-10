@@ -51,3 +51,18 @@ export async function apiDelete(path: string, options?: RequestOptions): Promise
     headers: options?.headers,
   });
 }
+
+export async function apiPatch<T>(path: string, payload?: unknown, options?: RequestOptions): Promise<T> {
+  const body = payload === undefined
+    ? undefined
+    : typeof payload === 'string'
+      ? payload
+      : JSON.stringify(payload);
+
+  return request<T>(path, {
+    method: 'PATCH',
+    body,
+    headers: options?.headers,
+  });
+}
+

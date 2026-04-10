@@ -15,6 +15,7 @@ export interface Requirement {
   platforms: Platform[];
   priority: string;
   risk: string;
+  business_rules?: string[];
   status: string;
   created_at: string;
   updated_at: string;
@@ -29,6 +30,7 @@ export interface TestCase {
   priority: string;
   review_status: string;
   steps: TestStepDefinition[];
+  assertions?: Array<{ type: string; value?: string | null; target?: string | null }>;
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -68,6 +70,20 @@ export interface StartExecutionRequest {
   environment: string;
   agent_type: Platform;
   headless: boolean;
+}
+
+export interface RequirementUpdateRequest {
+  title?: string;
+  description?: string;
+  target_url?: string | null;
+  priority?: string;
+  risk?: string;
+}
+
+export interface TestCaseUpdateRequest {
+  title?: string;
+  objective?: string;
+  priority?: string;
 }
 
 export interface AISuggestion {

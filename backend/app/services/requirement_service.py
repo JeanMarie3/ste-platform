@@ -1,7 +1,7 @@
 from app.repositories.sql_store import RequirementRepository
 from app.domain.enums import PlatformType
 from app.schemas.common import utc_now
-from app.schemas.requirements import RequirementCreate, RequirementRead
+from app.schemas.requirements import RequirementCreate, RequirementRead, RequirementUpdate
 
 
 class RequirementService:
@@ -33,6 +33,25 @@ class RequirementService:
 
     def get_requirement(self, requirement_id: str) -> RequirementRead | None:
         return self.repository.get(requirement_id)
+
+    def update_requirement(self, requirement_id: str, payload: RequirementUpdate) -> RequirementRead | None:
+        current = self.repository.get(requirement_id)
+        if current is None:
+            return None
+
+        updates = payload.model_dump(exclude_unset=True)
+        merged_platforms = updates.get("platforms", current.platforms)
+        merged_target_url = updates.get("target_url", current.target_url)
+        if PlatformType.WEB in merged_platforms and not merged_target_url:
+            raise ValueError("target_url is required when web platform is selected")
+
+        updated = current.model_copy(
+            update={
+                **updates,
+                "updated_at": utc_now(),
+            }
+        )
+        return self.repository.update(updated)
 
     def delete_requirement(self, requirement_id: str) -> bool:
         from app.repositories.sql_store import TestCaseRepository

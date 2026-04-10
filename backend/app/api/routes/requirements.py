@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 
-from app.schemas.requirements import RequirementCreate, RequirementRead
+from app.schemas.requirements import RequirementCreate, RequirementRead, RequirementUpdate
 from app.schemas.testcases import TestCaseRead
 from app.services.requirement_service import RequirementService
 from app.services.testcase_service import TestCaseService
@@ -37,6 +37,17 @@ def list_requirements() -> list[RequirementRead]:
 @router.get("/{requirement_id}", response_model=RequirementRead)
 def get_requirement(requirement_id: str) -> RequirementRead:
     item = requirement_service.get_requirement(requirement_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    return item
+
+
+@router.patch("/{requirement_id}", response_model=RequirementRead)
+def update_requirement(requirement_id: str, payload: RequirementUpdate) -> RequirementRead:
+    try:
+        item = requirement_service.update_requirement(requirement_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if item is None:
         raise HTTPException(status_code=404, detail="Requirement not found")
     return item
