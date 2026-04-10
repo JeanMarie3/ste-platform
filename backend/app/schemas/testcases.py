@@ -70,6 +70,7 @@ class TestRunRead(BaseModel):
     test_case_id: str
     agent_type: PlatformType
     environment: str = "local"
+    run_mode: str = "headless"
     status: ExecutionStatus
     summary_reason: str
     confidence_score: float

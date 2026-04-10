@@ -54,6 +54,7 @@ export interface TestRun {
   test_case_id: string;
   agent_type: Platform;
   environment: string;
+  run_mode: 'headless' | 'headed' | string;
   status: string;
   summary_reason: string;
   confidence_score: number;

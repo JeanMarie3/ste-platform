@@ -23,6 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libx11-xcb1 \
 	ca-certificates \
 	fonts-liberation \
+	libpulse0 \
+	libdbus-1-3 \
+	libexpat1 \
+	libssl3 \
+	libfreetype6 \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

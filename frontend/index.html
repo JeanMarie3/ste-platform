@@ -4,9 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>STE Dashboard</title>
+    <script>
+      (function () {
+        var devtoolsEnabled = '%VITE_ENABLE_REACT_DEVTOOLS%' === 'true';
+        var host = window.location.hostname;
+        var isLocalHost = host === 'localhost' || host === '127.0.0.1';
+        if (!devtoolsEnabled || !isLocalHost) {
+          return;
+        }
+
+        // Standalone React DevTools bridge (http://localhost:8097).
+        var script = document.createElement('script');
+        script.src = 'http://localhost:8097';
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        document.head.appendChild(script);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <script src="http://localhost:8097"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
