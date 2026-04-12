@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
 import { Panel } from '../components/Panel';
@@ -44,6 +44,7 @@ export interface DashboardProps {
 }
 
 export function Dashboard({ userRole }: DashboardProps) {
+  const groupsPerPage = 5;
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [runs, setRuns] = useState<TestRun[]>([]);
@@ -57,6 +58,12 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [form, setForm] = useState(initialRequirementForm);
   const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
+  const [requirementsPage, setRequirementsPage] = useState(1);
+  const [testCasesPage, setTestCasesPage] = useState(1);
+  const [executionsPage, setExecutionsPage] = useState(1);
+  const [requirementsItemPages, setRequirementsItemPages] = useState<Record<string, number>>({});
+  const [testCaseVersionPages, setTestCaseVersionPages] = useState<Record<string, number>>({});
+  const [executionRunPages, setExecutionRunPages] = useState<Record<string, number>>({});
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(initialSelectedPlatforms);
 
@@ -522,6 +529,37 @@ export function Dashboard({ userRole }: DashboardProps) {
     return sorted;
   }, [runsByTestCase, testCaseVersionById]);
 
+  const requirementsTotalPages = Math.max(1, Math.ceil(requirementsByProject.length / groupsPerPage));
+  const testCasesTotalPages = Math.max(1, Math.ceil(testCasesByProject.length / groupsPerPage));
+  const executionsTotalPages = Math.max(1, Math.ceil(runsByTC.length / groupsPerPage));
+
+  const pagedRequirementsByProject = useMemo(() => {
+    const startIndex = (requirementsPage - 1) * groupsPerPage;
+    return requirementsByProject.slice(startIndex, startIndex + groupsPerPage);
+  }, [requirementsByProject, requirementsPage, groupsPerPage]);
+
+  const pagedTestCasesByProject = useMemo(() => {
+    const startIndex = (testCasesPage - 1) * groupsPerPage;
+    return testCasesByProject.slice(startIndex, startIndex + groupsPerPage);
+  }, [testCasesByProject, testCasesPage, groupsPerPage]);
+
+  const pagedRunsByTC = useMemo(() => {
+    const startIndex = (executionsPage - 1) * groupsPerPage;
+    return runsByTC.slice(startIndex, startIndex + groupsPerPage);
+  }, [runsByTC, executionsPage, groupsPerPage]);
+
+  useEffect(() => {
+    setRequirementsPage((current) => Math.min(current, requirementsTotalPages));
+  }, [requirementsTotalPages]);
+
+  useEffect(() => {
+    setTestCasesPage((current) => Math.min(current, testCasesTotalPages));
+  }, [testCasesTotalPages]);
+
+  useEffect(() => {
+    setExecutionsPage((current) => Math.min(current, executionsTotalPages));
+  }, [executionsTotalPages]);
+
   const getTestCaseResultBadge = (testCaseId: string): { label: string; style: CSSProperties } => {
     const latestRun = latestRunByTestCaseId[testCaseId];
     if (!latestRun) {
@@ -651,6 +689,39 @@ export function Dashboard({ userRole }: DashboardProps) {
     }, 2200);
   };
 
+  const renderPaginationControls = (
+    page: number,
+    totalPages: number,
+    onPageChange: (nextPage: number) => void,
+  ) => {
+    if (totalPages <= 1) return null;
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+        <button type="button" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>
+          Previous
+        </button>
+        <span style={{ fontSize: 12, color: '#475467' }}>Page {page} of {totalPages}</span>
+        <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(Math.min(totalPages, page + 1))}>
+          Next
+        </button>
+      </div>
+    );
+  };
+
+  const getPageForKey = (pages: Record<string, number>, key: string): number => pages[key] ?? 1;
+
+  const setPageForKey = (
+    setter: Dispatch<SetStateAction<Record<string, number>>>,
+    key: string,
+    nextPage: number,
+  ) => {
+    setter((current) => ({
+      ...current,
+      [key]: nextPage,
+    }));
+  };
+
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {error ? <div style={{ padding: 12, background: '#fdecec', border: '1px solid #f4b1b1', borderRadius: 8 }}>{error}</div> : null}
@@ -727,13 +798,22 @@ export function Dashboard({ userRole }: DashboardProps) {
 
         {/* ── Requirements ────────────────────────────────── */}
         <Panel title="Requirements">
-          {requirements.length === 0 ? <p>No requirements yet.</p> : requirementsByProject.map((projectGroup) => (
+          {requirements.length === 0 ? <p>No requirements yet.</p> : pagedRequirementsByProject.map((projectGroup) => (
+            (() => {
+              const projectPageKey = projectGroup.projectCode;
+              const projectPage = getPageForKey(requirementsItemPages, projectPageKey);
+              const projectTotalPages = Math.max(1, Math.ceil(projectGroup.items.length / groupsPerPage));
+              const projectPageSafe = Math.min(projectPage, projectTotalPages);
+              const projectItems = [...projectGroup.items].reverse();
+              const pagedProjectItems = projectItems.slice((projectPageSafe - 1) * groupsPerPage, projectPageSafe * groupsPerPage);
+
+              return (
             <details key={projectGroup.projectCode} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
               <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
                 <strong>Project: {projectGroup.projectCode} ({projectGroup.items.length} requirement{projectGroup.items.length > 1 ? 's' : ''})</strong>
               </summary>
               <div style={{ marginLeft: 20, marginTop: 8 }}>
-                {[...projectGroup.items].reverse().map((item) => (
+                {pagedProjectItems.map((item) => (
                   <details key={item.id} style={{ marginBottom: 16, paddingBottom: 16, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
                     <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
                       <strong>{item.title}</strong>
@@ -766,9 +846,13 @@ export function Dashboard({ userRole }: DashboardProps) {
                     </div>
                   </details>
                 ))}
+                {renderPaginationControls(projectPageSafe, projectTotalPages, (nextPage) => setPageForKey(setRequirementsItemPages, projectPageKey, nextPage))}
               </div>
             </details>
+              );
+            })()
           ))}
+          {renderPaginationControls(requirementsPage, requirementsTotalPages, setRequirementsPage)}
         </Panel>
 
         {/* ── Test Cases — grouped by Project -> TC base -> versions ── */}
@@ -786,7 +870,7 @@ export function Dashboard({ userRole }: DashboardProps) {
               Turn this off for headed mode when running locally with a display.
             </div>
           </div>
-          {testCases.length === 0 ? <p>No test cases yet.</p> : testCasesByProject.map((projectGroup) => (
+          {testCases.length === 0 ? <p>No test cases yet.</p> : pagedTestCasesByProject.map((projectGroup) => (
             <details key={projectGroup.projectCode} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
               <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
                 <strong>Project: {projectGroup.projectCode} ({projectGroup.totalCases} test case{projectGroup.totalCases > 1 ? 's' : ''})</strong>
@@ -794,6 +878,11 @@ export function Dashboard({ userRole }: DashboardProps) {
 
               <div style={{ marginLeft: 20, marginTop: 8 }}>
                 {projectGroup.tcGroups.map((group) => {
+                  const versionPageKey = `${projectGroup.projectCode}:${group.tcBase}`;
+                  const versionPage = getPageForKey(testCaseVersionPages, versionPageKey);
+                  const versionTotalPages = Math.max(1, Math.ceil(group.versions.length / groupsPerPage));
+                  const versionPageSafe = Math.min(versionPage, versionTotalPages);
+                  const pagedVersions = group.versions.slice((versionPageSafe - 1) * groupsPerPage, versionPageSafe * groupsPerPage);
 
                   return (
                     <details key={group.tcBase} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
@@ -804,7 +893,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                       </summary>
 
                       <div style={{ marginLeft: 40 }}>
-                        {group.versions.map((item) => {
+                        {pagedVersions.map((item) => {
                           const parentReq = requirementById[item.requirement_id];
                           const resultBadge = getTestCaseResultBadge(item.id);
                           const latestRunStatus = latestRunByTestCaseId[item.id]?.status;
@@ -896,6 +985,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                           </div>
                           );
                         })}
+                        {renderPaginationControls(versionPageSafe, versionTotalPages, (nextPage) => setPageForKey(setTestCaseVersionPages, versionPageKey, nextPage))}
                       </div>
                     </details>
                   );
@@ -903,12 +993,13 @@ export function Dashboard({ userRole }: DashboardProps) {
               </div>
             </details>
           ))}
+          {renderPaginationControls(testCasesPage, testCasesTotalPages, setTestCasesPage)}
         </Panel>
 
         {/* ── Executions — grouped by test case ── */}
         <Panel title="Executions">
           <div id="executions-panel-anchor" />
-          {runs.length === 0 ? <p>No test runs yet.</p> : runsByTC.map((tcGroup) => {
+          {runs.length === 0 ? <p>No test runs yet.</p> : pagedRunsByTC.map((tcGroup) => {
             return (
               <details key={tcGroup.tcBase} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
                 <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
@@ -920,6 +1011,10 @@ export function Dashboard({ userRole }: DashboardProps) {
                     const parentTestCaseId = testCaseIdByVersionLabel[versionGroup.tcVersion];
                     const parentTC = parentTestCaseId ? testCaseById[parentTestCaseId] : undefined;
                     const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
+                    const runPageKey = versionGroup.tcVersion;
+                    const runPage = getPageForKey(executionRunPages, runPageKey);
+                    const runTotalPages = Math.max(1, Math.ceil(versionGroup.runs.length / groupsPerPage));
+                    const runPageSafe = Math.min(runPage, runTotalPages);
 
                     return (
                       <details key={versionGroup.tcVersion} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
@@ -978,8 +1073,11 @@ export function Dashboard({ userRole }: DashboardProps) {
                             });
 
                             const runsNewestFirst = [...runsOrderedOldestToNewest].reverse();
+                            const pagedRunsNewestFirst = runsNewestFirst.slice((runPageSafe - 1) * groupsPerPage, runPageSafe * groupsPerPage);
 
-                            return runsNewestFirst.map((item) => (
+                            return (
+                              <>
+                                {pagedRunsNewestFirst.map((item) => (
                             <div
                               id={`execution-run-${item.id}`}
                               key={item.id}
@@ -1047,7 +1145,10 @@ export function Dashboard({ userRole }: DashboardProps) {
                                 </ul>
                               </details>
                             </div>
-                            ));
+                                ))}
+                                {renderPaginationControls(runPageSafe, runTotalPages, (nextPage) => setPageForKey(setExecutionRunPages, runPageKey, nextPage))}
+                              </>
+                            );
                           })()}
                         </div>
                       </details>
@@ -1057,6 +1158,7 @@ export function Dashboard({ userRole }: DashboardProps) {
               </details>
             );
           })}
+          {renderPaginationControls(executionsPage, executionsTotalPages, setExecutionsPage)}
         </Panel>
 
       </div>
