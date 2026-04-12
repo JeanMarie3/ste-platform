@@ -185,18 +185,18 @@ export default function App() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 46,
-              height: 46,
+              width: 48,
+              height: 48,
               background: '#ffffff',
-              border: '3px solid #7c3aed',
+              border: '3px solid #e2e8f0',
               borderRadius: '50%',
               padding: 0,
               cursor: 'pointer',
-              boxShadow: '0 1px 3px rgba(16, 24, 40, 0.08), inset 0 0 0 2px #175cd3',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
             }}
             aria-label="Open account menu"
           >
-            <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#5b3cc4', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 700, flexShrink: 0, fontSize: 16 }}>
+            <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#5c3ab1', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 700, flexShrink: 0, fontSize: 16 }}>
               {accountInitials}
             </div>
           </button>
@@ -204,7 +204,7 @@ export default function App() {
           {accountMenuOpen && (
             <div style={{ position: 'absolute', top: 'calc(100% + 12px)', right: 0, width: 344, background: '#ffffff', border: '1px solid #d7e0ea', borderRadius: 20, boxShadow: '0 18px 40px rgba(16, 24, 40, 0.18)', padding: 16, zIndex: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 14, borderBottom: '1px solid #edf2f7' }}>
-                <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#5b3cc4', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 20, fontWeight: 700, border: '2px solid #e7e0ff' }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#5c3ab1', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 20, fontWeight: 700, border: '2px solid #e7e0ff' }}>
                   {accountInitials}
                 </div>
                 <div style={{ minWidth: 0 }}>
@@ -270,5 +270,4 @@ export default function App() {
     </main>
   );
 }
-
 
