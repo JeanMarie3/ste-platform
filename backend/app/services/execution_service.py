@@ -45,49 +45,63 @@ class ExecutionService:
         return created_run
 
     def _complete_run(self, run: TestRunRead, request: StartExecutionRequest, test_case) -> None:
-
         try:
-            target_url = self._extract_target_url(test_case.metadata)
-            if test_case.platform == PlatformType.WEB and not target_url:
-                response = self._local_blocked_response(
-                    "This web test case has no target URL. Regenerate from a requirement with target_url."
-                )
-            else:
-                agent_payload = {
-                    "test_case_id": test_case.id,
-                    "platform": test_case.platform.value,
-                    "environment": request.environment,
-                    "headless": request.headless,
-                    "target_url": target_url,
-                    "steps": [step.model_dump() for step in test_case.steps],
-                    "assertions": [rule.model_dump() for rule in test_case.assertions],
-                    "title": test_case.title,
+            try:
+                target_url = self._extract_target_url(test_case.metadata)
+                if test_case.platform == PlatformType.WEB and not target_url:
+                    response = self._local_blocked_response(
+                        "This web test case has no target URL. Regenerate from a requirement with target_url."
+                    )
+                else:
+                    agent_payload = {
+                        "test_case_id": test_case.id,
+                        "platform": test_case.platform.value,
+                        "environment": request.environment,
+                        "headless": request.headless,
+                        "target_url": target_url,
+                        "steps": [step.model_dump() for step in test_case.steps],
+                        "assertions": [rule.model_dump() for rule in test_case.assertions],
+                        "title": test_case.title,
+                    }
+                    response = self._call_agent(agent_payload)
+            except Exception as exc:
+                response = self._local_failed_response(f"Execution dispatch failed: {self._safe_error_text(exc)}")
+
+            response_status = str(response.get("status") or ExecutionStatus.FAILED.value)
+            response_message = str(response.get("message") or "Execution completed with no message")
+            response_confidence = float(response.get("confidence") or 0.65)
+            response_steps = response.get("steps") if isinstance(response.get("steps"), list) else []
+            try:
+                final_status = ExecutionStatus(response_status)
+            except ValueError:
+                final_status = ExecutionStatus.FAILED
+
+            updated_run = run.model_copy(
+                update={
+                    "status": final_status,
+                    "summary_reason": response_message,
+                    "confidence_score": response_confidence,
+                    "finished_at": utc_now(),
+                    "steps": self._parse_response_steps(response_steps),
                 }
-                response = self._call_agent(agent_payload)
+            )
         except Exception as exc:
-            response = self._local_failed_response(f"Execution dispatch failed: {self._safe_error_text(exc)}")
+            self.logger.exception("Run %s failed during completion finalization", run.id)
+            updated_run = run.model_copy(
+                update={
+                    "status": ExecutionStatus.FAILED,
+                    "summary_reason": f"Execution finalization failed: {self._safe_error_text(exc)}",
+                    "confidence_score": 0.5,
+                    "finished_at": utc_now(),
+                    "steps": self._parse_response_steps(self._local_failed_response(self._safe_error_text(exc)).get("steps") or []),
+                }
+            )
 
-        response_status = str(response.get("status") or ExecutionStatus.FAILED.value)
-        response_message = str(response.get("message") or "Execution completed with no message")
-        response_confidence = float(response.get("confidence") or 0.65)
-        response_steps = response.get("steps") if isinstance(response.get("steps"), list) else []
         try:
-            final_status = ExecutionStatus(response_status)
-        except ValueError:
-            final_status = ExecutionStatus.FAILED
-
-        updated_run = run.model_copy(
-            update={
-                "status": final_status,
-                "summary_reason": response_message,
-                "confidence_score": response_confidence,
-                "finished_at": utc_now(),
-                "steps": self._parse_response_steps(response_steps),
-            }
-        )
-
-        if not self.test_run_repository.update_result(updated_run):
-            self.logger.warning("Run %s could not be updated after execution completion", run.id)
+            if not self.test_run_repository.update_result(updated_run):
+                self.logger.warning("Run %s could not be updated after execution completion", run.id)
+        except Exception:
+            self.logger.exception("Run %s update_result raised an exception", run.id)
 
     def _extract_target_url(self, metadata: dict | None) -> str | None:
         if not isinstance(metadata, dict):

@@ -218,6 +218,11 @@ export function Dashboard({ userRole }: DashboardProps) {
     return latest;
   }, [runs]);
 
+  const hasInFlightRuns = useMemo(
+    () => runs.some((run) => run.status === 'running' || run.status === 'pending'),
+    [runs],
+  );
+
   const refresh = async () => {
     const [requirementsData, testCasesData, runsData] = await Promise.all([
       apiGet<Requirement[]>('/requirements'),
@@ -232,6 +237,18 @@ export function Dashboard({ userRole }: DashboardProps) {
   useEffect(() => {
     refresh().catch((err) => setError(String(err)));
   }, []);
+
+  useEffect(() => {
+    if (!hasInFlightRuns) return;
+
+    const timer = window.setInterval(() => {
+      refresh().catch((err) => setError(String(err)));
+    }, 2500);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [hasInFlightRuns]);
 
   useEffect(() => {
     if (aiApiKey.trim()) {
