@@ -1,4 +1,4 @@
-import { CSSProperties, Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, ChangeEvent, Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
 import { Panel } from '../components/Panel';
@@ -65,6 +65,8 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [testCaseVersionPages, setTestCaseVersionPages] = useState<Record<string, number>>({});
   const [executionRunPages, setExecutionRunPages] = useState<Record<string, number>>({});
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const requirementUploadRef = useRef<HTMLInputElement | null>(null);
+  const testCaseUploadRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(initialSelectedPlatforms);
 
@@ -724,6 +726,149 @@ export function Dashboard({ userRole }: DashboardProps) {
     }));
   };
 
+  const downloadJson = (filename: string, data: unknown) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadRequirements = () => {
+    downloadJson('requirements-export.json', {
+      exported_at: new Date().toISOString(),
+      requirements,
+    });
+  };
+
+  const handleDownloadTestCases = () => {
+    downloadJson('testcases-export.json', {
+      exported_at: new Date().toISOString(),
+      test_cases: testCases,
+    });
+  };
+
+  const readJsonFile = async (event: ChangeEvent<HTMLInputElement>): Promise<unknown | null> => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return null;
+    const text = await file.text();
+    return JSON.parse(text);
+  };
+
+  const handleUploadRequirements = async (event: ChangeEvent<HTMLInputElement>) => {
+    try {
+      const parsed = await readJsonFile(event);
+      if (!parsed) return;
+      const payload = Array.isArray(parsed)
+        ? parsed
+        : (parsed as { requirements?: unknown[] }).requirements;
+      if (!Array.isArray(payload)) {
+        setError('Invalid requirements file format. Expected an array or { requirements: [...] }.');
+        return;
+      }
+
+      setBusy('upload-requirements');
+      setError('');
+
+      const currentById = new Set(requirements.map((item) => item.id));
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const rawItem of payload) {
+        const item = rawItem as Partial<Requirement>;
+        if (!item.project_code || !item.title || !item.description || !item.platforms?.length) {
+          skipped += 1;
+          continue;
+        }
+
+        if (item.id && currentById.has(item.id)) {
+          await apiPatch<Requirement>(`/requirements/${item.id}`, {
+            title: item.title,
+            description: item.description,
+            target_url: item.target_url ?? null,
+            platforms: item.platforms,
+            priority: item.priority,
+            risk: item.risk,
+            business_rules: item.business_rules ?? [],
+          });
+          updated += 1;
+        } else {
+          await apiPost<Requirement>('/requirements', {
+            project_code: item.project_code,
+            title: item.title,
+            description: item.description,
+            target_url: item.target_url ?? null,
+            platforms: item.platforms,
+            priority: item.priority ?? 'medium',
+            risk: item.risk ?? 'medium',
+            business_rules: item.business_rules ?? [],
+          });
+          created += 1;
+        }
+      }
+
+      await refresh();
+      window.alert(`Requirements upload complete. Created: ${created}, Updated: ${updated}, Skipped: ${skipped}.`);
+    } catch (err) {
+      setError(`Requirements upload failed: ${String(err)}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const handleUploadTestCases = async (event: ChangeEvent<HTMLInputElement>) => {
+    try {
+      const parsed = await readJsonFile(event);
+      if (!parsed) return;
+      const parsedObj = parsed as { test_cases?: unknown[]; testCases?: unknown[] };
+      const payload = Array.isArray(parsed)
+        ? parsed
+        : parsedObj.test_cases ?? parsedObj.testCases;
+      if (!Array.isArray(payload)) {
+        setError('Invalid test case file format. Expected an array or { test_cases: [...] }.');
+        return;
+      }
+
+      setBusy('upload-testcases');
+      setError('');
+
+      const currentById = new Set(testCases.map((item) => item.id));
+      let updated = 0;
+      let skipped = 0;
+
+      for (const rawItem of payload) {
+        const item = rawItem as Partial<TestCase>;
+        if (!item.id || !currentById.has(item.id)) {
+          skipped += 1;
+          continue;
+        }
+
+        await apiPatch<TestCase>(`/testcases/${item.id}`, {
+          title: item.title,
+          objective: item.objective,
+          priority: item.priority,
+          steps: item.steps,
+          assertions: item.assertions,
+          tags: item.tags,
+        });
+        updated += 1;
+      }
+
+      await refresh();
+      window.alert(`Test case upload complete. Updated: ${updated}, Skipped: ${skipped}.`);
+    } catch (err) {
+      setError(`Test case upload failed: ${String(err)}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {error ? <div style={{ padding: 12, background: '#fdecec', border: '1px solid #f4b1b1', borderRadius: 8 }}>{error}</div> : null}
@@ -732,9 +877,10 @@ export function Dashboard({ userRole }: DashboardProps) {
 
         {/* ── Requirements ────────────────────────────────── */}
         <Panel title="Requirements">
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-start' }}>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
+              disabled={busy === 'upload-requirements'}
               style={{
                 background: showCreateForm ? '#f1f5f9' : '#5c3ab1',
                 color: showCreateForm ? '#334155' : '#fff',
@@ -749,6 +895,23 @@ export function Dashboard({ userRole }: DashboardProps) {
             >
               {showCreateForm ? 'Cancel' : '+ Generate Requirement'}
             </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={handleDownloadRequirements}>Download JSON</button>
+              <button
+                type="button"
+                disabled={busy === 'upload-requirements'}
+                onClick={() => requirementUploadRef.current?.click()}
+              >
+                {busy === 'upload-requirements' ? 'Uploading...' : 'Upload JSON'}
+              </button>
+              <input
+                ref={requirementUploadRef}
+                type="file"
+                accept="application/json"
+                onChange={handleUploadRequirements}
+                style={{ display: 'none' }}
+              />
+            </div>
           </div>
 
           {showCreateForm && (
@@ -886,6 +1049,23 @@ export function Dashboard({ userRole }: DashboardProps) {
 
         {/* ── Test Cases — grouped by Project -> TC base -> versions ── */}
         <Panel title="Test Cases">
+          <div style={{ marginBottom: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={handleDownloadTestCases}>Download JSON</button>
+            <button
+              type="button"
+              disabled={busy === 'upload-testcases'}
+              onClick={() => testCaseUploadRef.current?.click()}
+            >
+              {busy === 'upload-testcases' ? 'Uploading...' : 'Upload JSON'}
+            </button>
+            <input
+              ref={testCaseUploadRef}
+              type="file"
+              accept="application/json"
+              onChange={handleUploadTestCases}
+              style={{ display: 'none' }}
+            />
+          </div>
           <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
               <input
