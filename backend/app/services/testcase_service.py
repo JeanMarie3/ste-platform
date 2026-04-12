@@ -76,12 +76,10 @@ class TestCaseService:
             return None
 
         updates = payload.model_dump(exclude_unset=True)
-        updated = current.model_copy(
-            update={
-                **updates,
-                "updated_at": utc_now(),
-            }
-        )
+        merged = current.model_dump()
+        merged.update(updates)
+        merged["updated_at"] = utc_now()
+        updated = TestCaseRead.model_validate(merged)
         return self.repository.update(updated)
 
     def review_test_case(self, test_case_id: str, action: ReviewAction) -> TestCaseRead | None:

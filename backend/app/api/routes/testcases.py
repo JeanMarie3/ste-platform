@@ -25,7 +25,10 @@ def get_test_case(test_case_id: str) -> TestCaseRead:
 
 @router.patch("/{test_case_id}", response_model=TestCaseRead)
 def update_test_case(test_case_id: str, payload: TestCaseUpdate) -> TestCaseRead:
-    item = service.update_test_case(test_case_id, payload)
+    try:
+        item = service.update_test_case(test_case_id, payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
     if item is None:
         raise HTTPException(status_code=404, detail="Test case not found")
     return item

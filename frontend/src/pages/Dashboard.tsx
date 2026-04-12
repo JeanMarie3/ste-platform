@@ -10,6 +10,7 @@ import type {
   RequirementUpdateRequest,
   StartExecutionRequest,
   TestCase,
+  TestStepDefinition,
   TestCaseUpdateRequest,
   TestRun,
 } from '../types';
@@ -65,6 +66,18 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [testCaseVersionPages, setTestCaseVersionPages] = useState<Record<string, number>>({});
   const [executionRunPages, setExecutionRunPages] = useState<Record<string, number>>({});
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingRequirementId, setEditingRequirementId] = useState<string | null>(null);
+  const [editingTestCaseId, setEditingTestCaseId] = useState<string | null>(null);
+  const [requirementDraft, setRequirementDraft] = useState<{ title: string; description: string; target_url: string }>({
+    title: '',
+    description: '',
+    target_url: '',
+  });
+  const [testCaseDraft, setTestCaseDraft] = useState<{ title: string; objective: string; stepsText: string }>({
+    title: '',
+    objective: '',
+    stepsText: '',
+  });
   const requirementUploadRef = useRef<HTMLInputElement | null>(null);
   const testCaseUploadRef = useRef<HTMLInputElement | null>(null);
   const requirementCsvUploadRef = useRef<HTMLInputElement | null>(null);
@@ -360,26 +373,33 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   };
 
-  const editRequirement = async (item: Requirement) => {
-    const title = window.prompt('Edit requirement title', item.title);
-    if (title === null) return;
-    const description = window.prompt('Edit requirement description', item.description);
-    if (description === null) return;
-    const targetUrlDefault = item.target_url ?? '';
-    const target_url = window.prompt('Edit target URL (leave empty to clear)', targetUrlDefault);
-    if (target_url === null) return;
+  const startEditRequirement = (item: Requirement) => {
+    setEditingRequirementId(item.id);
+    setRequirementDraft({
+      title: item.title,
+      description: item.description,
+      target_url: item.target_url ?? '',
+    });
+  };
 
+  const cancelEditRequirement = () => {
+    setEditingRequirementId(null);
+    setRequirementDraft({ title: '', description: '', target_url: '' });
+  };
+
+  const saveRequirementEdits = async (requirementId: string) => {
     const payload: RequirementUpdateRequest = {
-      title: title.trim(),
-      description: description.trim(),
-      target_url: target_url.trim() ? target_url.trim() : null,
+      title: requirementDraft.title.trim(),
+      description: requirementDraft.description.trim(),
+      target_url: requirementDraft.target_url.trim() ? requirementDraft.target_url.trim() : null,
     };
 
-    setBusy(`edit-req-${item.id}`);
+    setBusy(`edit-req-${requirementId}`);
     setError('');
     try {
-      await apiPatch<Requirement>(`/requirements/${item.id}`, payload);
+      await apiPatch<Requirement>(`/requirements/${requirementId}`, payload);
       await refresh();
+      cancelEditRequirement();
     } catch (err) {
       setError(String(err));
     } finally {
@@ -419,22 +439,39 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   };
 
-  const editTestCase = async (item: TestCase) => {
-    const title = window.prompt('Edit test case title', item.title);
-    if (title === null) return;
-    const objective = window.prompt('Edit test case objective', item.objective);
-    if (objective === null) return;
+  const startEditTestCase = (item: TestCase) => {
+    setEditingTestCaseId(item.id);
+    setTestCaseDraft({
+      title: item.title,
+      objective: item.objective,
+      stepsText: serializeStepsForEdit(item.steps),
+    });
+  };
+
+  const cancelEditTestCase = () => {
+    setEditingTestCaseId(null);
+    setTestCaseDraft({ title: '', objective: '', stepsText: '' });
+  };
+
+  const saveTestCaseEdits = async (testCaseId: string) => {
+    const parsedSteps = parseStepsFromEdit(testCaseDraft.stepsText);
+    if (parsedSteps.length === 0) {
+      setError('Please enter at least one valid test step: action | target | optional value');
+      return;
+    }
 
     const payload: TestCaseUpdateRequest = {
-      title: title.trim(),
-      objective: objective.trim(),
+      title: testCaseDraft.title.trim(),
+      objective: testCaseDraft.objective.trim(),
+      steps: parsedSteps,
     };
 
-    setBusy(`edit-${item.id}`);
+    setBusy(`edit-${testCaseId}`);
     setError('');
     try {
-      await apiPatch<TestCase>(`/testcases/${item.id}`, payload);
+      await apiPatch<TestCase>(`/testcases/${testCaseId}`, payload);
       await refresh();
+      cancelEditTestCase();
     } catch (err) {
       setError(String(err));
     } finally {
@@ -501,6 +538,27 @@ export function Dashboard({ userRole }: DashboardProps) {
         : [...current, platform]
     ));
   };
+
+  const serializeStepsForEdit = (steps: TestStepDefinition[]): string => (
+    steps.map((step) => [step.action, step.target, step.value ?? ''].join(' | ')).join('\n')
+  );
+
+  const parseStepsFromEdit = (stepsText: string): TestStepDefinition[] => (
+    stepsText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [action = '', target = '', ...valueParts] = line.split('|').map((part) => part.trim());
+        const valueText = valueParts.join(' | ').trim();
+        return {
+          action,
+          target,
+          value: valueText || undefined,
+        };
+      })
+      .filter((step) => step.action && step.target)
+  );
 
   const runsByTC = useMemo(() => {
     const tcGroupMap: Record<string, Array<{ tcVersion: string; runs: TestRun[] }>> = {};
@@ -1241,12 +1299,32 @@ export function Dashboard({ userRole }: DashboardProps) {
                       <strong>{item.title}</strong>
                     </summary>
                     <div style={{ marginLeft: 22, marginTop: 6 }}>
+                      {editingRequirementId === item.id ? (
+                        <div style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
+                          <input
+                            value={requirementDraft.title}
+                            onChange={(e) => setRequirementDraft((current) => ({ ...current, title: e.target.value }))}
+                            placeholder="Requirement title"
+                          />
+                          <textarea
+                            value={requirementDraft.description}
+                            onChange={(e) => setRequirementDraft((current) => ({ ...current, description: e.target.value }))}
+                            rows={3}
+                            placeholder="Requirement description"
+                          />
+                          <input
+                            value={requirementDraft.target_url}
+                            onChange={(e) => setRequirementDraft((current) => ({ ...current, target_url: e.target.value }))}
+                            placeholder="Target URL (optional)"
+                          />
+                        </div>
+                      ) : null}
                       <div style={{ fontSize: 11, color: '#8a96a3', marginBottom: 4 }}>{item.id}</div>
                       <div style={{ fontSize: 11, color: '#0066cc', marginBottom: 4 }}>
                         Created: {formatDateTime(item.created_at)} {item.updated_at !== item.created_at && `| Updated: ${formatDateTime(item.updated_at)}`}
                       </div>
-                      <div style={{ margin: '4px 0' }}>{item.description}</div>
-                      {item.target_url ? (
+                      {editingRequirementId === item.id ? null : <div style={{ margin: '4px 0' }}>{item.description}</div>}
+                      {editingRequirementId === item.id ? null : item.target_url ? (
                         <div style={{ margin: '4px 0', fontSize: 12 }}>
                           Target: <a href={item.target_url} target="_blank" rel="noreferrer">{item.target_url}</a>
                         </div>
@@ -1256,9 +1334,20 @@ export function Dashboard({ userRole }: DashboardProps) {
                         <button onClick={() => generateTestCases(item.id)} disabled={busy === item.id}>
                           {busy === item.id ? 'Generating...' : 'Generate test cases'}
                         </button>
-                        <button onClick={() => editRequirement(item)} disabled={busy === `edit-req-${item.id}`}>
-                          {busy === `edit-req-${item.id}` ? 'Saving...' : 'Edit requirement'}
-                        </button>
+                        {editingRequirementId === item.id ? (
+                          <>
+                            <button onClick={() => saveRequirementEdits(item.id)} disabled={busy === `edit-req-${item.id}`}>
+                              {busy === `edit-req-${item.id}` ? 'Saving...' : 'Save requirement'}
+                            </button>
+                            <button type="button" onClick={cancelEditRequirement} disabled={busy === `edit-req-${item.id}`}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => startEditRequirement(item)} disabled={busy === `edit-req-${item.id}`}>
+                            Edit requirement
+                          </button>
+                        )}
                         {userRole === 'admin' && (
                           <button onClick={() => deleteRequirement(item.id)} disabled={busy === `delete-req-${item.id}`}>
                             {busy === `delete-req-${item.id}` ? 'Deleting...' : 'Delete requirement'}
@@ -1352,12 +1441,20 @@ export function Dashboard({ userRole }: DashboardProps) {
                           const resultBadge = getTestCaseResultBadge(item.id);
                           const latestRunStatus = latestRunByTestCaseId[item.id]?.status;
                           const isExecutionInProgress = latestRunStatus === 'running' || latestRunStatus === 'pending';
+                          const isEditing = editingTestCaseId === item.id;
 
                           return (
                           <div id={`test-case-card-${item.id}`} key={item.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #e3e8ef' }}>
                             <div><strong>{testCaseVersionById[item.id] ?? 'TC-0000-v1'}</strong></div>
                             <div style={{ fontSize: 12, color: '#6f7c8a', marginBottom: 2 }}>
-                              {item.title}
+                              {isEditing ? (
+                                <input
+                                  value={testCaseDraft.title}
+                                  onChange={(e) => setTestCaseDraft((current) => ({ ...current, title: e.target.value }))}
+                                  placeholder="Test case title"
+                                  style={{ width: '100%' }}
+                                />
+                              ) : item.title}
                               {parentReq ? ` - ${parentReq.title}` : ''}
                             </div>
                             <div style={{ fontSize: 11, marginBottom: 4 }}>
@@ -1401,23 +1498,48 @@ export function Dashboard({ userRole }: DashboardProps) {
                               )}
                               {item.metadata?.ai_generated ? <span style={{ fontSize: 11, background: '#e8f4fd', color: '#1565c0', padding: '1px 6px', borderRadius: 10 }}>AI</span> : null}
                             </div>
-                            <div style={{ margin: '4px 0' }}>{item.objective}</div>
+                            <div style={{ margin: '4px 0' }}>
+                              {isEditing ? (
+                                <textarea
+                                  value={testCaseDraft.objective}
+                                  onChange={(e) => setTestCaseDraft((current) => ({ ...current, objective: e.target.value }))}
+                                  rows={3}
+                                  placeholder="Test case objective"
+                                  style={{ width: '100%' }}
+                                />
+                              ) : item.objective}
+                            </div>
+                            {isEditing ? (
+                              <div style={{ margin: '8px 0' }}>
+                                <div style={{ fontSize: 12, color: '#475467', marginBottom: 4 }}>
+                                  Test steps (one per line: action | target | optional value)
+                                </div>
+                                <textarea
+                                  value={testCaseDraft.stepsText}
+                                  onChange={(e) => setTestCaseDraft((current) => ({ ...current, stepsText: e.target.value }))}
+                                  rows={6}
+                                  style={{ width: '100%' }}
+                                />
+                              </div>
+                            ) : null}
                             {typeof item.metadata?.target_url === 'string' && item.metadata.target_url ? (
                               <div style={{ margin: '4px 0', fontSize: 12 }}>
                                 Target: <a href={item.metadata.target_url as string} target="_blank" rel="noreferrer">{item.metadata.target_url as string}</a>
                               </div>
                             ) : null}
-                            <details style={{ marginTop: 6 }}>
-                              <summary style={{ cursor: 'pointer', fontSize: 13 }}>Test steps ({item.steps.length})</summary>
-                              <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 18 }}>
-                                {item.steps.map((step, index) => (
-                                  <li key={`${item.id}-step-${index}`}>
-                                    {step.action}:{step.target}
-                                    {step.value ? ` (${step.value})` : ''}
-                                  </li>
-                                ))}
-                              </ul>
-                            </details>
+                            {!isEditing && (
+                              <details style={{ marginTop: 6 }}>
+                                <summary style={{ cursor: 'pointer', fontSize: 13 }}>Test steps ({item.steps.length})</summary>
+                                <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 18 }}>
+                                  {item.steps.map((step, index) => (
+                                    <li key={`${item.id}-step-${index}`}>
+                                      {step.action}:{step.target}
+                                      {step.value ? ` (${step.value})` : ''}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
                               {reviewStatuses.map((status) => (
                                 <button key={status} onClick={() => reviewTestCase(item.id, status)} disabled={busy === item.id || item.review_status === status}>
@@ -1427,9 +1549,20 @@ export function Dashboard({ userRole }: DashboardProps) {
                               <button onClick={() => startExecution(item)} disabled={busy === `run-${item.id}` || item.review_status !== 'approved' || isExecutionInProgress}>
                                 {busy === `run-${item.id}` || isExecutionInProgress ? 'Running...' : 'Start execution'}
                               </button>
-                              <button onClick={() => editTestCase(item)} disabled={busy === `edit-${item.id}`}>
-                                {busy === `edit-${item.id}` ? 'Saving...' : 'Edit test case'}
-                              </button>
+                              {isEditing ? (
+                                <>
+                                  <button onClick={() => saveTestCaseEdits(item.id)} disabled={busy === `edit-${item.id}`}>
+                                    {busy === `edit-${item.id}` ? 'Saving...' : 'Save test case'}
+                                  </button>
+                                  <button type="button" onClick={cancelEditTestCase} disabled={busy === `edit-${item.id}`}>
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <button onClick={() => startEditTestCase(item)} disabled={busy === `edit-${item.id}`}>
+                                  Edit test case
+                                </button>
+                              )}
                               {userRole === 'admin' && (
                                 <button onClick={() => deleteTestCase(item)} disabled={busy === `delete-${item.id}`}>
                                   {busy === `delete-${item.id}` ? 'Deleting...' : 'Delete test case'}

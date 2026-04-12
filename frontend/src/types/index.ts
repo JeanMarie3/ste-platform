@@ -85,6 +85,9 @@ export interface TestCaseUpdateRequest {
   title?: string;
   objective?: string;
   priority?: string;
+  steps?: TestStepDefinition[];
+  assertions?: Array<{ type: string; value?: string | null; target?: string | null }>;
+  tags?: string[];
 }
 
 export interface AISuggestion {
