@@ -64,6 +64,7 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [requirementsItemPages, setRequirementsItemPages] = useState<Record<string, number>>({});
   const [testCaseVersionPages, setTestCaseVersionPages] = useState<Record<string, number>>({});
   const [executionRunPages, setExecutionRunPages] = useState<Record<string, number>>({});
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(initialSelectedPlatforms);
 
@@ -334,6 +335,7 @@ export function Dashboard({ userRole }: DashboardProps) {
       await refresh();
       setForm(initialRequirementForm);
       setSelectedPlatforms(initialSelectedPlatforms);
+      setShowCreateForm(false);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -697,7 +699,7 @@ export function Dashboard({ userRole }: DashboardProps) {
     if (totalPages <= 1) return null;
 
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 12 }}>
         <button type="button" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>
           Previous
         </button>
@@ -726,78 +728,105 @@ export function Dashboard({ userRole }: DashboardProps) {
     <div style={{ display: 'grid', gap: 16 }}>
       {error ? <div style={{ padding: 12, background: '#fdecec', border: '1px solid #f4b1b1', borderRadius: 8 }}>{error}</div> : null}
 
-      <Panel title="✦ AI Assist — Describe your requirement">
-        <div style={{ display: 'grid', gap: 10 }}>
-          <input
-            type="password"
-            value={aiApiKey}
-            placeholder="Your OpenAI API key (used only for AI actions in this browser)"
-            onChange={(e) => setAiApiKey(e.target.value)}
-          />
-          <textarea
-            value={aiText}
-            placeholder="Describe what needs to be tested in plain English, e.g. 'Users should be able to reset their password via email link within 10 minutes, with rate limiting to 3 attempts per hour.'"
-            rows={3}
-            onChange={(e) => setAiText(e.target.value)}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={handleAiSuggest} disabled={aiLoading || !aiText.trim()}>
-              {aiLoading ? 'Thinking...' : 'Suggest with AI ✦'}
-            </button>
-            {aiNote ? (
-              <span style={{ fontSize: 13, color: aiNote.startsWith('✓') ? '#2d7a3a' : '#b05c00' }}>{aiNote}</span>
-            ) : null}
-          </div>
-        </div>
-      </Panel>
-
-      <Panel title="Create Requirement">
-        <form onSubmit={handleCreateRequirement} style={{ display: 'grid', gap: 12 }}>
-          <input
-            value={form.project_code}
-            placeholder="Project code (e.g. APP)"
-            required
-            onChange={(e) => setForm({ ...form, project_code: e.target.value.toUpperCase().replace(/\s+/g, '') })}
-          />
-          <input value={form.title} placeholder="Requirement title" required onChange={(e) => setForm({ ...form, title: e.target.value })} />
-          <textarea value={form.description} placeholder="Requirement description" rows={4} required onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          <input
-            value={form.target_url}
-            placeholder="Target web URL (e.g. https://dev.educatifu.com/)"
-            onChange={(e) => setForm({ ...form, target_url: e.target.value })}
-          />
-          <div style={{ display: 'flex', gap: 12 }}>
-            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-              {priorities.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-            <select value={form.risk} onChange={(e) => setForm({ ...form, risk: e.target.value })}>
-              {risks.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            <div>Platforms</div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {platformOptions.map((platform) => (
-                <label key={platform} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedPlatforms.includes(platform)}
-                    onChange={() => togglePlatform(platform)}
-                  />
-                  {platform}
-                </label>
-              ))}
-            </div>
-          </div>
-          <textarea value={form.business_rules} placeholder="Business rules, one per line" rows={3} onChange={(e) => setForm({ ...form, business_rules: e.target.value })} />
-          <button type="submit" disabled={busy === 'requirement'}>{busy === 'requirement' ? 'Creating...' : 'Create requirement'}</button>
-        </form>
-      </Panel>
-
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
 
         {/* ── Requirements ────────────────────────────────── */}
         <Panel title="Requirements">
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-start' }}>
+            <button
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              style={{
+                background: showCreateForm ? '#f1f5f9' : '#5c3ab1',
+                color: showCreateForm ? '#334155' : '#fff',
+                border: showCreateForm ? '1px solid #cbd5e1' : 'none',
+                borderRadius: 6,
+                padding: '6px 12px',
+                fontSize: 13,
+                cursor: 'pointer',
+                fontWeight: 600,
+                transition: 'all 0.2s',
+              }}
+            >
+              {showCreateForm ? 'Cancel' : '+ Generate Requirement'}
+            </button>
+          </div>
+
+          {showCreateForm && (
+            <div style={{ marginBottom: 20, padding: 16, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, display: 'grid', gap: 20 }}>
+              <div>
+                <strong style={{ display: 'block', marginBottom: 12, color: '#334155' }}>✦ AI Assist — Describe your requirement</strong>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <input
+                    type="password"
+                    value={aiApiKey}
+                    placeholder="Your OpenAI API key (used only for AI actions in this browser)"
+                    onChange={(e) => setAiApiKey(e.target.value)}
+                  />
+                  <textarea
+                    value={aiText}
+                    placeholder="Describe what needs to be tested in plain English, e.g. 'Users should be able to reset their password via email link within 10 minutes, with rate limiting to 3 attempts per hour.'"
+                    rows={3}
+                    onChange={(e) => setAiText(e.target.value)}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button onClick={handleAiSuggest} disabled={aiLoading || !aiText.trim()}>
+                      {aiLoading ? 'Thinking...' : 'Suggest with AI ✦'}
+                    </button>
+                    {aiNote ? (
+                      <span style={{ fontSize: 13, color: aiNote.startsWith('✓') ? '#2d7a3a' : '#b05c00' }}>{aiNote}</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: 0 }} />
+
+              <div>
+                <strong style={{ display: 'block', marginBottom: 12, color: '#334155' }}>Create Requirement Details</strong>
+                <form onSubmit={handleCreateRequirement} style={{ display: 'grid', gap: 12 }}>
+                  <input
+                    value={form.project_code}
+                    placeholder="Project code (e.g. APP)"
+                    required
+                    onChange={(e) => setForm({ ...form, project_code: e.target.value.toUpperCase().replace(/\s+/g, '') })}
+                  />
+                  <input value={form.title} placeholder="Requirement title" required onChange={(e) => setForm({ ...form, title: e.target.value })} />
+                  <textarea value={form.description} placeholder="Requirement description" rows={4} required onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                  <input
+                    value={form.target_url}
+                    placeholder="Target web URL (e.g. https://dev.educatifu.com/)"
+                    onChange={(e) => setForm({ ...form, target_url: e.target.value })}
+                  />
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+                      {priorities.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                    <select value={form.risk} onChange={(e) => setForm({ ...form, risk: e.target.value })}>
+                      {risks.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div>Platforms</div>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {platformOptions.map((platform) => (
+                        <label key={platform} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedPlatforms.includes(platform)}
+                            onChange={() => togglePlatform(platform)}
+                          />
+                          {platform}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <textarea value={form.business_rules} placeholder="Business rules, one per line" rows={3} onChange={(e) => setForm({ ...form, business_rules: e.target.value })} />
+                  <button type="submit" disabled={busy === 'requirement'}>{busy === 'requirement' ? 'Creating...' : 'Create requirement'}</button>
+                </form>
+              </div>
+            </div>
+          )}
+
           {requirements.length === 0 ? <p>No requirements yet.</p> : pagedRequirementsByProject.map((projectGroup) => (
             (() => {
               const projectPageKey = projectGroup.projectCode;
