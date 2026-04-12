@@ -67,6 +67,8 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const requirementUploadRef = useRef<HTMLInputElement | null>(null);
   const testCaseUploadRef = useRef<HTMLInputElement | null>(null);
+  const requirementCsvUploadRef = useRef<HTMLInputElement | null>(null);
+  const testCaseCsvUploadRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(initialSelectedPlatforms);
 
@@ -738,6 +740,74 @@ export function Dashboard({ userRole }: DashboardProps) {
     URL.revokeObjectURL(url);
   };
 
+  const escapeCsvCell = (value: unknown): string => {
+    const text = String(value ?? '');
+    if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  };
+
+  const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
+    const lines = [headers, ...rows]
+      .map((row) => row.map((cell) => escapeCsvCell(cell)).join(','))
+      .join('\n');
+    const blob = new Blob([lines], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const parseCsvLine = (line: string): string[] => {
+    const out: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i += 1) {
+      const char = line[i];
+      const next = line[i + 1];
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        out.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    out.push(current);
+    return out;
+  };
+
+  const parseCsvText = (text: string): Array<Record<string, string>> => {
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]);
+    return lines.slice(1).map((line) => {
+      const cells = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((header, index) => {
+        row[header] = cells[index] ?? '';
+      });
+      return row;
+    });
+  };
+
+  const splitPipeList = (raw: string): string[] => raw.split('|').map((item) => item.trim()).filter(Boolean);
+
   const handleDownloadRequirements = () => {
     downloadJson('requirements-export.json', {
       exported_at: new Date().toISOString(),
@@ -745,11 +815,45 @@ export function Dashboard({ userRole }: DashboardProps) {
     });
   };
 
+  const handleDownloadRequirementsCsv = () => {
+    const headers = ['id', 'project_code', 'title', 'description', 'target_url', 'platforms', 'priority', 'risk', 'business_rules', 'status'];
+    const rows = requirements.map((item) => [
+      item.id,
+      item.project_code,
+      item.title,
+      item.description,
+      item.target_url ?? '',
+      item.platforms.join('|'),
+      item.priority,
+      item.risk,
+      (item.business_rules ?? []).join('|'),
+      item.status,
+    ]);
+    downloadCsv('requirements-export.csv', headers, rows);
+  };
+
   const handleDownloadTestCases = () => {
     downloadJson('testcases-export.json', {
       exported_at: new Date().toISOString(),
       test_cases: testCases,
     });
+  };
+
+  const handleDownloadTestCasesCsv = () => {
+    const headers = ['id', 'requirement_id', 'title', 'objective', 'platform', 'priority', 'review_status', 'steps_json', 'assertions_json', 'tags'];
+    const rows = testCases.map((item) => [
+      item.id,
+      item.requirement_id,
+      item.title,
+      item.objective,
+      item.platform,
+      item.priority,
+      item.review_status,
+      JSON.stringify(item.steps ?? []),
+      JSON.stringify(item.assertions ?? []),
+      (item.tags ?? []).join('|'),
+    ]);
+    downloadCsv('testcases-export.csv', headers, rows);
   };
 
   const readJsonFile = async (event: ChangeEvent<HTMLInputElement>): Promise<unknown | null> => {
@@ -822,6 +926,67 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   };
 
+  const handleUploadRequirementsCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      const parsed = parseCsvText(await file.text());
+
+      setBusy('upload-requirements');
+      setError('');
+
+      const currentById = new Set(requirements.map((item) => item.id));
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const row of parsed) {
+        if (!row.project_code || !row.title || !row.description) {
+          skipped += 1;
+          continue;
+        }
+        const platforms = splitPipeList(row.platforms) as Platform[];
+        if (platforms.length === 0) {
+          skipped += 1;
+          continue;
+        }
+
+        if (row.id && currentById.has(row.id)) {
+          await apiPatch<Requirement>(`/requirements/${row.id}`, {
+            title: row.title,
+            description: row.description,
+            target_url: row.target_url || null,
+            platforms,
+            priority: row.priority || 'medium',
+            risk: row.risk || 'medium',
+            business_rules: splitPipeList(row.business_rules),
+          });
+          updated += 1;
+        } else {
+          await apiPost<Requirement>('/requirements', {
+            project_code: row.project_code,
+            title: row.title,
+            description: row.description,
+            target_url: row.target_url || null,
+            platforms,
+            priority: row.priority || 'medium',
+            risk: row.risk || 'medium',
+            business_rules: splitPipeList(row.business_rules),
+          });
+          created += 1;
+        }
+      }
+
+      await refresh();
+      window.alert(`Requirements CSV upload complete. Created: ${created}, Updated: ${updated}, Skipped: ${skipped}.`);
+    } catch (err) {
+      setError(`Requirements CSV upload failed: ${String(err)}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
   const handleUploadTestCases = async (event: ChangeEvent<HTMLInputElement>) => {
     try {
       const parsed = await readJsonFile(event);
@@ -869,6 +1034,56 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   };
 
+  const handleUploadTestCasesCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      const parsed = parseCsvText(await file.text());
+
+      setBusy('upload-testcases');
+      setError('');
+
+      const currentById = new Set(testCases.map((item) => item.id));
+      let updated = 0;
+      let skipped = 0;
+
+      for (const row of parsed) {
+        if (!row.id || !currentById.has(row.id)) {
+          skipped += 1;
+          continue;
+        }
+
+        let steps = [];
+        let assertions = [];
+        try {
+          steps = row.steps_json ? JSON.parse(row.steps_json) : [];
+          assertions = row.assertions_json ? JSON.parse(row.assertions_json) : [];
+        } catch {
+          skipped += 1;
+          continue;
+        }
+
+        await apiPatch<TestCase>(`/testcases/${row.id}`, {
+          title: row.title,
+          objective: row.objective,
+          priority: row.priority,
+          steps,
+          assertions,
+          tags: splitPipeList(row.tags),
+        });
+        updated += 1;
+      }
+
+      await refresh();
+      window.alert(`Test case CSV upload complete. Updated: ${updated}, Skipped: ${skipped}.`);
+    } catch (err) {
+      setError(`Test case CSV upload failed: ${String(err)}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {error ? <div style={{ padding: 12, background: '#fdecec', border: '1px solid #f4b1b1', borderRadius: 8 }}>{error}</div> : null}
@@ -897,6 +1112,7 @@ export function Dashboard({ userRole }: DashboardProps) {
             </button>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" onClick={handleDownloadRequirements}>Download JSON</button>
+              <button type="button" onClick={handleDownloadRequirementsCsv}>Download Excel (CSV)</button>
               <button
                 type="button"
                 disabled={busy === 'upload-requirements'}
@@ -904,11 +1120,25 @@ export function Dashboard({ userRole }: DashboardProps) {
               >
                 {busy === 'upload-requirements' ? 'Uploading...' : 'Upload JSON'}
               </button>
+              <button
+                type="button"
+                disabled={busy === 'upload-requirements'}
+                onClick={() => requirementCsvUploadRef.current?.click()}
+              >
+                {busy === 'upload-requirements' ? 'Uploading...' : 'Upload Excel (CSV)'}
+              </button>
               <input
                 ref={requirementUploadRef}
                 type="file"
                 accept="application/json"
                 onChange={handleUploadRequirements}
+                style={{ display: 'none' }}
+              />
+              <input
+                ref={requirementCsvUploadRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleUploadRequirementsCsv}
                 style={{ display: 'none' }}
               />
             </div>
@@ -1051,6 +1281,7 @@ export function Dashboard({ userRole }: DashboardProps) {
         <Panel title="Test Cases">
           <div style={{ marginBottom: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" onClick={handleDownloadTestCases}>Download JSON</button>
+            <button type="button" onClick={handleDownloadTestCasesCsv}>Download Excel (CSV)</button>
             <button
               type="button"
               disabled={busy === 'upload-testcases'}
@@ -1058,11 +1289,25 @@ export function Dashboard({ userRole }: DashboardProps) {
             >
               {busy === 'upload-testcases' ? 'Uploading...' : 'Upload JSON'}
             </button>
+            <button
+              type="button"
+              disabled={busy === 'upload-testcases'}
+              onClick={() => testCaseCsvUploadRef.current?.click()}
+            >
+              {busy === 'upload-testcases' ? 'Uploading...' : 'Upload Excel (CSV)'}
+            </button>
             <input
               ref={testCaseUploadRef}
               type="file"
               accept="application/json"
               onChange={handleUploadTestCases}
+              style={{ display: 'none' }}
+            />
+            <input
+              ref={testCaseCsvUploadRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleUploadTestCasesCsv}
               style={{ display: 'none' }}
             />
           </div>
