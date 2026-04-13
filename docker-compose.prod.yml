@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ste-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ste_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-ste_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    volumes:
+      - ste_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ste_user} -d ${POSTGRES_DB:-ste_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ste_internal
+
+  agent:
+    build:
+      context: ./agent
+    container_name: ste-agent
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8010/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ste_internal
+
+  backend:
+    build:
+      context: ./backend
+    container_name: ste-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://ste_user:change_me@postgres:5432/ste_platform}
+      AGENT_BASE_URL: ${AGENT_BASE_URL:-http://agent:8010}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_WEBHOOK_SECRET: ${OPENAI_WEBHOOK_SECRET:-}
+      BACKEND_PUBLIC_BASE_URL: ${BACKEND_PUBLIC_BASE_URL:-https://example.com}
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks:
+      - ste_internal
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: ste-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://example.com/api/v1}
+    ports:
+      - "127.0.0.1:5173:5173"
+    networks:
+      - ste_internal
+
+volumes:
+  ste_postgres_data:
+
+networks:
+  ste_internal:
+    driver: bridge
+

@@ -211,6 +211,66 @@ Useful options:
 - force reinstall deps: `./scripts/dev-up.ps1 -ForceReinstall`
 - skip Playwright browser install: `./scripts/dev-up.ps1 -SkipBrowserInstall`
 
+## Publish on Hostinger (VPS)
+
+Use these files prepared in this repo:
+
+- `docker-compose.prod.yml` - production compose stack (no public DB/agent ports)
+- `.env.production.example` - production env template
+- `deploy/nginx/ste-platform.conf` - reverse proxy + TLS routing
+- `.github/workflows/deploy-hostinger-vps.yml` - optional GitHub Actions deploy job
+
+### 1) Prepare production env on the server
+
+```bash
+cd /opt/ste-platform
+cp .env.production.example .env
+```
+
+Set at least:
+
+- `POSTGRES_PASSWORD`
+- `DATABASE_URL`
+- `OPENAI_API_KEY`
+- `OPENAI_WEBHOOK_SECRET`
+- `BACKEND_PUBLIC_BASE_URL`
+- `VITE_API_BASE_URL`
+
+### 2) Start the production stack
+
+```bash
+cd /opt/ste-platform
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
+```
+
+### 3) Configure Nginx on VPS
+
+Copy `deploy/nginx/ste-platform.conf` to `/etc/nginx/sites-available/ste-platform.conf`,
+replace `example.com` with your domain, then enable it:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/ste-platform.conf /etc/nginx/sites-enabled/ste-platform.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 4) Verify after publish
+
+- `https://your-domain/api/v1/health` should return `{"status":"ok"}`
+- frontend should load from `https://your-domain/`
+- OpenAI webhook should target `https://your-domain/api/v1/openai/webhooks`
+
+### 5) Optional GitHub Actions deploy
+
+Set repository secrets used by `.github/workflows/deploy-hostinger-vps.yml`:
+
+- `HOSTINGER_HOST`
+- `HOSTINGER_USER`
+- `HOSTINGER_SSH_KEY`
+- `HOSTINGER_SSH_PORT` (optional, defaults to 22)
+- `HOSTINGER_APP_DIR` (for example `/opt/ste-platform`)
+
 ## Suggested next implementation steps
 
 1. Replace synthetic agent adapters with real Playwright-based web execution
