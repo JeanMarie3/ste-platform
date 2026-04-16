@@ -31,6 +31,7 @@ export interface TestCase {
   review_status: string;
   steps: TestStepDefinition[];
   assertions?: Array<{ type: string; value?: string | null; target?: string | null }>;
+  tags?: string[];
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -84,6 +85,9 @@ export interface TestCaseUpdateRequest {
   title?: string;
   objective?: string;
   priority?: string;
+  steps?: TestStepDefinition[];
+  assertions?: Array<{ type: string; value?: string | null; target?: string | null }>;
+  tags?: string[];
 }
 
 export interface AISuggestion {
@@ -108,4 +112,3 @@ export interface AuthUser {
 export interface AuthMessage {
   message: string;
 }
-

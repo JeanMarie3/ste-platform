@@ -1,5 +1,5 @@
 import { Dashboard } from './pages/Dashboard';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 
@@ -13,8 +13,7 @@ const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.te
 type SessionUser = { username: string; email: string; role: 'admin' | 'standard' };
 
 const getHashRoute = (): string => {
-  const hash = window.location.hash.slice(1) || 'home';
-  return hash;
+  return window.location.hash.slice(1) || 'home';
 };
 
 export default function App() {
@@ -36,6 +35,8 @@ export default function App() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -78,10 +79,32 @@ export default function App() {
     };
   }, [user]);
 
+  useEffect(() => {
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!accountMenuRef.current) return;
+      if (accountMenuRef.current.contains(event.target as Node)) return;
+      setAccountMenuOpen(false);
+    };
+
+    window.addEventListener('mousedown', handleMouseDown);
+    return () => window.removeEventListener('mousedown', handleMouseDown);
+  }, []);
+
+  const accountInitials = useMemo(() => {
+    const source = user?.username?.trim() || user?.email?.trim() || 'U';
+    return source
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('') || 'U';
+  }, [user]);
+
   const handleLogin = (loggedInUser: AuthUser) => {
     setUser(loggedInUser);
     sessionStorage.setItem('ste.currentUser', JSON.stringify(loggedInUser));
     setDeleteOpen(false);
+    setAccountMenuOpen(false);
     setDeleteError('');
     setDeletePassword('');
     setDeleteConfirmText('');
@@ -93,6 +116,7 @@ export default function App() {
     setUser(null);
     sessionStorage.removeItem('ste.currentUser');
     setDeleteOpen(false);
+    setAccountMenuOpen(false);
     setDeleteError('');
     setDeletePassword('');
     setDeleteConfirmText('');
@@ -148,29 +172,68 @@ export default function App() {
 
   return (
     <main style={{ minHeight: '100vh', background: '#f4f7fb', color: '#17212b', padding: 24, fontFamily: 'Arial, sans-serif' }}>
-      <header style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24 }}>
         <div>
           <h1 style={{ marginBottom: 8 }}>Software Testing Engine</h1>
           <p style={{ margin: 0 }}>Web control plane starter for requirements, generated test cases, and executions.</p>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div>Logged in as <strong>{user.username}</strong> ({user.role})</div>
-          <div style={{ fontSize: 12, color: '#6f7c8a' }}>{user.email}</div>
-          <button style={{ marginTop: 8 }} onClick={handleLogout}>Logout</button>
-          <div>
-            <button
-              style={{ marginTop: 8, background: '#b42318', color: '#fff', border: 'none', borderRadius: 4, padding: '6px 10px', cursor: 'pointer' }}
-              onClick={() => {
-                setDeleteOpen((current) => !current);
-                setDeleteError('');
-                setDeletePassword('');
-                setDeleteConfirmText('');
-                setDeleteEmail(user.email);
-              }}
-            >
-              {deleteOpen ? 'Cancel delete' : 'Delete my account'}
-            </button>
-          </div>
+        <div ref={accountMenuRef} style={{ position: 'relative', minWidth: 72, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setAccountMenuOpen((current) => !current)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 48,
+              height: 48,
+              background: '#ffffff',
+              border: '3px solid #e2e8f0',
+              borderRadius: '50%',
+              padding: 0,
+              cursor: 'pointer',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+            }}
+            aria-label="Open account menu"
+          >
+            <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#5c3ab1', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 700, flexShrink: 0, fontSize: 16 }}>
+              {accountInitials}
+            </div>
+          </button>
+
+          {accountMenuOpen && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 12px)', right: 0, width: 344, background: '#ffffff', border: '1px solid #d7e0ea', borderRadius: 20, boxShadow: '0 18px 40px rgba(16, 24, 40, 0.18)', padding: 16, zIndex: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 14, borderBottom: '1px solid #edf2f7' }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#5c3ab1', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 20, fontWeight: 700, border: '2px solid #e7e0ff' }}>
+                  {accountInitials}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>{user.username}</div>
+                  <div style={{ fontSize: 13, color: '#667085', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: '#175cd3', fontWeight: 600 }}>{user.role === 'admin' ? 'Administrator' : 'Standard user'}</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
+                <button type="button" onClick={handleLogout} style={{ width: '100%' }}>
+                  Logout
+                </button>
+                <button
+                  type="button"
+                  style={{ width: '100%', background: '#b42318', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', fontWeight: 600 }}
+                  onClick={() => {
+                    setDeleteOpen((current) => !current);
+                    setDeleteError('');
+                    setDeletePassword('');
+                    setDeleteConfirmText('');
+                    setDeleteEmail(user.email);
+                  }}
+                >
+                  {deleteOpen ? 'Hide delete form' : 'Delete my account'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
       {deleteOpen && (
@@ -207,5 +270,4 @@ export default function App() {
     </main>
   );
 }
-
 

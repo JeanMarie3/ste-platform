@@ -1,0 +1,47 @@
+name: Deploy to Hostinger VPS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync repository to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || '22' }}
+          source: "."
+          target: ${{ secrets.HOSTINGER_APP_DIR }}
+          overwrite: true
+          rm: false
+          strip_components: 0
+          exclude: ".git,.github,.env,**/__pycache__,**/*.pyc,backend/data/*,dev-up.log,frontend/build.log,backend/compile.log"
+
+      - name: Restart production stack
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || '22' }}
+          script: |
+            set -e
+            cd "${{ secrets.HOSTINGER_APP_DIR }}"
+            if [ ! -f .env ]; then
+              cp .env.example .env
+              echo "Created .env from .env.example. Update secrets before next deploy."
+            fi
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            docker image prune -f
+
