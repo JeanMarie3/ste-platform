@@ -271,6 +271,41 @@ Set repository secrets used by `.github/workflows/deploy-hostinger-vps.yml`:
 - `HOSTINGER_SSH_PORT` (optional, defaults to 22)
 - `HOSTINGER_APP_DIR` (for example `/opt/ste-platform`)
 
+### 6) Optional one-command DB sync (local -> production)
+
+If your VPS has missing requirements/test cases compared to local Docker, use:
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform
+.\scripts\sync-local-to-prod.ps1 -ServerHost 76.13.157.139
+```
+
+Defaults:
+- syncs `requirements`, `test_cases`, and `test_runs`
+- creates a remote backup before import
+- keeps remote `users` unchanged to avoid duplicate-key conflicts
+
+Include users too (replace remote users with local users):
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform
+.\scripts\sync-local-to-prod.ps1 -ServerHost 76.13.157.139 -IncludeUsers
+```
+
+Dry run (show actions without writing changes):
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform
+.\scripts\sync-local-to-prod.ps1 -ServerHost 76.13.157.139 -WhatIf
+```
+
+Validation-only (checks required tools and parameters without DB access):
+
+```powershell
+cd C:\Users\Jean001\source\ste-platform
+.\scripts\sync-local-to-prod.ps1 -ServerHost 76.13.157.139 -ValidateOnly
+```
+
 ## Suggested next implementation steps
 
 1. Replace synthetic agent adapters with real Playwright-based web execution
