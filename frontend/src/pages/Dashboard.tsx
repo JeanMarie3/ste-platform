@@ -543,7 +543,7 @@ export function Dashboard({ userRole }: DashboardProps) {
     steps.map((step) => [step.action, step.target, step.value ?? ''].join(' | ')).join('\n')
   );
 
-  const parseStepsFromEdit = (stepsText: string): TestStepDefinition[] => (
+    const parseStepsFromEdit = (stepsText: string): TestStepDefinition[] => (
     stepsText
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -558,44 +558,63 @@ export function Dashboard({ userRole }: DashboardProps) {
         };
       })
       .filter((step) => step.action && step.target)
-  );
+    );
 
-  const runsByTC = useMemo(() => {
-    const tcGroupMap: Record<string, Array<{ tcVersion: string; runs: TestRun[] }>> = {};
-    
+    const runsByProject = useMemo(() => {
+    const grouped: Array<{ projectCode: string; totalRuns: number; tcGroups: Array<{ tcBase: string; versions: Array<{ tcVersion: string; runs: TestRun[] }> }> }> = [];
+    const projectIndexByCode: Record<string, number> = {};
+    const tcIndexByProject: Record<string, Record<string, number>> = {};
+
     for (const group of runsByTestCase) {
       const tcVersion = testCaseVersionById[group.testCaseId] ?? group.testCaseId;
       // Extract base TC number (e.g., "TC-0001" from "TC-0001-v2")
       const tcBaseMatch = tcVersion.match(/^(TC-\d+)/);
       const tcBase = tcBaseMatch ? tcBaseMatch[1] : 'TC-0000';
-      
-      if (!tcGroupMap[tcBase]) {
-        tcGroupMap[tcBase] = [];
+
+      const parentTC = testCaseById[group.testCaseId];
+      const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
+      const projectCode = parentReq?.project_code?.trim() || 'UNSPECIFIED';
+
+      let projectIdx = projectIndexByCode[projectCode];
+      if (projectIdx === undefined) {
+        projectIdx = grouped.length;
+        projectIndexByCode[projectCode] = projectIdx;
+        grouped.push({ projectCode, totalRuns: 0, tcGroups: [] });
+        tcIndexByProject[projectCode] = {};
       }
-      tcGroupMap[tcBase].push({ tcVersion, runs: group.runs });
+
+      grouped[projectIdx].totalRuns += group.runs.length;
+
+      let tcGroupIndex = tcIndexByProject[projectCode][tcBase];
+      if (tcGroupIndex === undefined) {
+        tcGroupIndex = grouped[projectIdx].tcGroups.length;
+        tcIndexByProject[projectCode][tcBase] = tcGroupIndex;
+        grouped[projectIdx].tcGroups.push({ tcBase, versions: [] });
+      }
+
+      grouped[projectIdx].tcGroups[tcGroupIndex].versions.push({ tcVersion, runs: group.runs });
     }
 
-    // Sort each TC's versions by version number descending (latest first)
-    const sorted: Array<{ tcBase: string; versions: Array<{ tcVersion: string; runs: TestRun[] }> }> = [];
-    Object.keys(tcGroupMap)
-      .sort()
-      .forEach((tcBase) => {
-        sorted.push({
-          tcBase,
-          versions: tcGroupMap[tcBase].sort((a, b) => {
-            const aVer = parseInt(a.tcVersion.split('-v')[1] || '0', 10);
-            const bVer = parseInt(b.tcVersion.split('-v')[1] || '0', 10);
-            return bVer - aVer; // Descending
-          }),
-        });
-      });
-
-    return sorted;
-  }, [runsByTestCase, testCaseVersionById]);
+    return grouped
+      .map((projectGroup) => ({
+        ...projectGroup,
+        tcGroups: projectGroup.tcGroups
+          .map((tcGroup) => ({
+            ...tcGroup,
+            versions: [...tcGroup.versions].sort((a, b) => {
+              const aVer = parseInt(a.tcVersion.split('-v')[1] || '0', 10);
+              const bVer = parseInt(b.tcVersion.split('-v')[1] || '0', 10);
+              return bVer - aVer; // Descending
+            }),
+          }))
+          .sort((a, b) => a.tcBase.localeCompare(b.tcBase)),
+      }))
+      .sort((a, b) => a.projectCode.localeCompare(b.projectCode));
+  }, [runsByTestCase, testCaseVersionById, testCaseById, requirementById]);
 
   const requirementsTotalPages = Math.max(1, Math.ceil(requirementsByProject.length / groupsPerPage));
   const testCasesTotalPages = Math.max(1, Math.ceil(testCasesByProject.length / groupsPerPage));
-  const executionsTotalPages = Math.max(1, Math.ceil(runsByTC.length / groupsPerPage));
+  const executionsTotalPages = Math.max(1, Math.ceil(runsByProject.length / groupsPerPage));
 
   const pagedRequirementsByProject = useMemo(() => {
     const startIndex = (requirementsPage - 1) * groupsPerPage;
@@ -607,10 +626,10 @@ export function Dashboard({ userRole }: DashboardProps) {
     return testCasesByProject.slice(startIndex, startIndex + groupsPerPage);
   }, [testCasesByProject, testCasesPage, groupsPerPage]);
 
-  const pagedRunsByTC = useMemo(() => {
+  const pagedRunsByProject = useMemo(() => {
     const startIndex = (executionsPage - 1) * groupsPerPage;
-    return runsByTC.slice(startIndex, startIndex + groupsPerPage);
-  }, [runsByTC, executionsPage, groupsPerPage]);
+    return runsByProject.slice(startIndex, startIndex + groupsPerPage);
+  }, [runsByProject, executionsPage, groupsPerPage]);
 
   useEffect(() => {
     setRequirementsPage((current) => Math.min(current, requirementsTotalPages));
@@ -1586,85 +1605,92 @@ export function Dashboard({ userRole }: DashboardProps) {
         {/* ── Executions — grouped by test case ── */}
         <Panel title="Executions">
           <div id="executions-panel-anchor" />
-          {runs.length === 0 ? <p>No test runs yet.</p> : pagedRunsByTC.map((tcGroup) => {
-            return (
-              <details key={tcGroup.tcBase} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
-                <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>{tcGroup.tcBase} ({tcGroup.versions.length} version{tcGroup.versions.length > 1 ? 's' : ''})</span>
-                </summary>
+          {runs.length === 0 ? <p>No test runs yet.</p> : pagedRunsByProject.map((projectGroup) => (
+            <details key={projectGroup.projectCode} style={{ marginBottom: 20, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #d9e1ec' }}>
+              <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                <strong>Project: {projectGroup.projectCode} ({projectGroup.totalRuns} run{projectGroup.totalRuns > 1 ? 's' : ''})</strong>
+              </summary>
 
-                <div style={{ marginLeft: 40 }}>
-                  {tcGroup.versions.map((versionGroup) => {
-                    const parentTestCaseId = testCaseIdByVersionLabel[versionGroup.tcVersion];
-                    const parentTC = parentTestCaseId ? testCaseById[parentTestCaseId] : undefined;
-                    const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
-                    const runPageKey = versionGroup.tcVersion;
-                    const runPage = getPageForKey(executionRunPages, runPageKey);
-                    const runTotalPages = Math.max(1, Math.ceil(versionGroup.runs.length / groupsPerPage));
-                    const runPageSafe = Math.min(runPage, runTotalPages);
+              <div style={{ marginLeft: 20, marginTop: 8 }}>
+                {projectGroup.tcGroups.map((tcGroup) => {
+                  return (
+                    <details key={tcGroup.tcBase} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
+                      <summary style={{ cursor: 'pointer', listStylePosition: 'inside' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{tcGroup.tcBase} ({tcGroup.versions.length} version{tcGroup.versions.length > 1 ? 's' : ''})</span>
+                      </summary>
 
-                    return (
-                      <details key={versionGroup.tcVersion} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
-                        <summary style={{ cursor: 'pointer', listStylePosition: 'inside', fontSize: 11 }}>
-                          <span style={{ fontWeight: 500 }}>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                if (parentTestCaseId) {
-                                  jumpToTestCase(parentTestCaseId);
-                                }
-                              }}
-                              style={{
-                                border: 'none',
-                                background: 'transparent',
-                                color: '#1565c0',
-                                cursor: parentTestCaseId ? 'pointer' : 'default',
-                                padding: 0,
-                                fontWeight: 600,
-                                textDecoration: parentTestCaseId ? 'underline' : 'none',
-                              }}
-                              title={parentTestCaseId ? 'Jump to related test case' : 'Related test case not found'}
-                            >
-                              {versionGroup.tcVersion}
-                            </button>{' '}
-                            ({versionGroup.runs.length} run{versionGroup.runs.length > 1 ? 's' : ''})
-                          </span>
-                        </summary>
+                      <div style={{ marginLeft: 40 }}>
+                        {tcGroup.versions.map((versionGroup) => {
+                          const parentTestCaseId = testCaseIdByVersionLabel[versionGroup.tcVersion];
+                          const parentTC = parentTestCaseId ? testCaseById[parentTestCaseId] : undefined;
+                          const parentReq = parentTC ? requirementById[parentTC.requirement_id] : undefined;
+                          const runPageKey = versionGroup.tcVersion;
+                          const runPage = getPageForKey(executionRunPages, runPageKey);
+                          const runTotalPages = Math.max(1, Math.ceil(versionGroup.runs.length / groupsPerPage));
+                          const runPageSafe = Math.min(runPage, runTotalPages);
 
-                        <div style={{ marginLeft: 20 }}>
-                          {/* test case group breadcrumb */}
-                          {(parentReq || parentTC) && (
-                            <div style={{ fontSize: 11, margin: '8px 0' }}>
-                              {parentReq && (
-                                <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
-                                  {parentReq.title}
+                          return (
+                            <details key={versionGroup.tcVersion} style={{ marginBottom: 16, paddingBottom: 12, paddingLeft: 0, borderBottom: '1px solid #e3e8ef' }}>
+                              <summary style={{ cursor: 'pointer', listStylePosition: 'inside', fontSize: 11 }}>
+                                <span style={{ fontWeight: 500 }}>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      if (parentTestCaseId) {
+                                        jumpToTestCase(parentTestCaseId);
+                                      }
+                                    }}
+                                    style={{
+                                      border: 'none',
+                                      background: 'transparent',
+                                      color: '#1565c0',
+                                      cursor: parentTestCaseId ? 'pointer' : 'default',
+                                      padding: 0,
+                                      fontWeight: 600,
+                                      textDecoration: parentTestCaseId ? 'underline' : 'none',
+                                    }}
+                                    title={parentTestCaseId ? 'Jump to related test case' : 'Related test case not found'}
+                                  >
+                                    {versionGroup.tcVersion}
+                                  </button>{' '}
+                                  ({versionGroup.runs.length} run{versionGroup.runs.length > 1 ? 's' : ''})
                                 </span>
-                              )}
-                              {parentTC && (
-                                <span style={{ background: '#edf7ed', color: '#2d7a3a', borderRadius: 4, padding: '1px 6px' }}>
-                                  ↳ {versionGroup.tcVersion}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                              </summary>
 
-                          {(() => {
-                            const runsOrderedOldestToNewest = [...versionGroup.runs].sort(
-                              (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
-                            );
-                            const executionOrderByRunId: Record<string, number> = {};
-                            runsOrderedOldestToNewest.forEach((run, index) => {
-                              executionOrderByRunId[run.id] = index + 1;
-                            });
+                              <div style={{ marginLeft: 20 }}>
+                                {/* test case group breadcrumb */}
+                                {(parentReq || parentTC) && (
+                                  <div style={{ fontSize: 11, margin: '8px 0' }}>
+                                    {parentReq && (
+                                      <span style={{ background: '#e8f4fd', color: '#1565c0', borderRadius: 4, padding: '1px 6px', marginRight: 4 }}>
+                                        {parentReq.title}
+                                      </span>
+                                    )}
+                                    {parentTC && (
+                                      <span style={{ background: '#edf7ed', color: '#2d7a3a', borderRadius: 4, padding: '1px 6px' }}>
+                                        ↳ {versionGroup.tcVersion}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
 
-                            const runsNewestFirst = [...runsOrderedOldestToNewest].reverse();
-                            const pagedRunsNewestFirst = runsNewestFirst.slice((runPageSafe - 1) * groupsPerPage, runPageSafe * groupsPerPage);
+                                {(() => {
+                                  const runsOrderedOldestToNewest = [...versionGroup.runs].sort(
+                                    (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
+                                  );
+                                  const executionOrderByRunId: Record<string, number> = {};
+                                  runsOrderedOldestToNewest.forEach((run, index) => {
+                                    executionOrderByRunId[run.id] = index + 1;
+                                  });
 
-                            return (
-                              <>
-                                {pagedRunsNewestFirst.map((item) => (
+                                  const runsNewestFirst = [...runsOrderedOldestToNewest].reverse();
+                                  const pagedRunsNewestFirst = runsNewestFirst.slice((runPageSafe - 1) * groupsPerPage, runPageSafe * groupsPerPage);
+
+                                  return (
+                                    <>
+                                      {pagedRunsNewestFirst.map((item) => (
                             <div
                               id={`execution-run-${item.id}`}
                               key={item.id}
@@ -1745,8 +1771,11 @@ export function Dashboard({ userRole }: DashboardProps) {
               </details>
             );
           })}
-          {renderPaginationControls(executionsPage, executionsTotalPages, setExecutionsPage)}
-        </Panel>
+        </div>
+      </details>
+    ))}
+    {renderPaginationControls(executionsPage, executionsTotalPages, setExecutionsPage)}
+  </Panel>
 
       </div>
     </div>
