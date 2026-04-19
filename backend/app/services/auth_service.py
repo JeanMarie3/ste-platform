@@ -68,6 +68,12 @@ class AuthService:
     def list_users(self) -> list[UserPublic]:
         return self.repository.list()
 
+    def user_exists(self, username: str, email: str, role: str) -> bool:
+        user = self.repository.get_by_username(username.strip())
+        if user is None:
+            return False
+        return user.email == email.strip().lower() and user.role == role
+
     def delete_account(self, payload: DeleteAccountRequest) -> None:
         username = payload.username.strip()
         email = payload.email.strip().lower()

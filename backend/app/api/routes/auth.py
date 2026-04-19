@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.auth import AuthMessage, DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic
+from app.schemas.auth import AuthMessage, DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, ValidateSessionRequest
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,7 +45,10 @@ def delete_account(payload: DeleteAccountRequest) -> AuthMessage:
     return AuthMessage(message="Account deleted successfully")
 
 
-@router.get("/users", response_model=list[UserPublic])
-def list_users() -> list[UserPublic]:
-    return auth_service.list_users()
+@router.post("/validate-session", response_model=AuthMessage)
+def validate_session(payload: ValidateSessionRequest) -> AuthMessage:
+    """Return 200 if a user with matching username/email/role still exists, 404 otherwise."""
+    if not auth_service.user_exists(payload.username, payload.email, payload.role):
+        raise HTTPException(status_code=404, detail="User no longer exists")
+    return AuthMessage(message="Session valid")
 

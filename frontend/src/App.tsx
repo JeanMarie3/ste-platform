@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 
-import { apiGet, apiPost } from './api/client';
+import { apiPost } from './api/client';
 import type { AuthMessage, AuthUser } from './types';
 
 const normalizeEmail = (value: string): string => value.trim().toLowerCase();
@@ -54,11 +54,14 @@ export default function App() {
 
     const validateSessionUser = async () => {
       try {
-        const users = await apiGet<AuthUser[]>('/auth/users');
-        const stillExists = users.some(
-          (item) => item.username === user.username && item.role === user.role && item.email === user.email,
-        );
-        if (!stillExists && !cancelled) {
+        await apiPost<AuthMessage>('/auth/validate-session', {
+          username: user.username,
+          email: user.email,
+          role: user.role,
+        });
+      } catch {
+        // 404 = user no longer exists; network errors keep session alive
+        if (!cancelled) {
           sessionStorage.removeItem('ste.currentUser');
           setUser(null);
           setDeleteOpen(false);
@@ -67,8 +70,6 @@ export default function App() {
           setDeleteConfirmText('');
           setDeleteEmail('');
         }
-      } catch {
-        // Keep the current session if auth API is temporarily unreachable.
       }
     };
 
