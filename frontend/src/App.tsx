@@ -2,6 +2,7 @@ import { Dashboard } from './pages/Dashboard';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
+import { UserManagement } from './components/UserManagement';
 
 import { apiPost } from './api/client';
 import type { AuthMessage, AuthUser } from './types';
@@ -37,6 +38,8 @@ export default function App() {
   const [deleteError, setDeleteError] = useState('');
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const isManageUsersPage = currentRoute === 'manage-users';
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -178,7 +181,39 @@ export default function App() {
           <h1 style={{ marginBottom: 8 }}>Software Testing Engine</h1>
           <p style={{ margin: 0 }}>Web control plane starter for requirements, generated test cases, and executions.</p>
         </div>
-        <div ref={accountMenuRef} style={{ position: 'relative', minWidth: 72, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        <div ref={accountMenuRef} style={{ position: 'relative', minWidth: 72, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
+          {user.role === 'admin' && (
+            <button
+              onClick={() => { window.location.hash = isManageUsersPage ? '#dashboard' : '#manage-users'; }}
+              style={{
+                background: '#85b7d9', // Matches screenshot "Manage Users" button color roughly
+                color: '#fff',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontWeight: 'bold',
+              }}
+            >
+              {isManageUsersPage ? 'Back to Checklist' : 'Manage Users'}
+            </button>
+          )}
+
+          <button
+            onClick={handleLogout}
+            style={{
+              background: '#fff',
+              color: '#333',
+              border: '1px solid #ccc',
+              padding: '8px 16px',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontWeight: 'normal',
+            }}
+          >
+            Logout
+          </button>
+          
           <button
             type="button"
             onClick={() => setAccountMenuOpen((current) => !current)}
@@ -267,7 +302,12 @@ export default function App() {
           </button>
         </form>
       )}
-      <Dashboard userRole={user.role} />
+
+      {isManageUsersPage && user.role === 'admin' ? (
+        <UserManagement />
+      ) : (
+        <Dashboard userRole={user.role} />
+      )}
     </main>
   );
 }

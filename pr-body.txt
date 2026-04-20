@@ -1,0 +1,7 @@
+﻿### Description
+This PR aligns the Test Executions panel with the Requirements and Test Cases modules by structuring them under expandable project prefixes.
+### Changes
+- Refactored Dashboard.tsx Executions rendering logic to correctly group Test Runs by their Project Code.
+- Replaced floating test executions with nested folder-like dropdown menus under related parent projects.
+- Added appropriate details and collapsible UI states matching the visual depth of TestCases.
+- Ensured mapping accurately reflects loops mapping Projects, sub-groups, and test versions securely.
