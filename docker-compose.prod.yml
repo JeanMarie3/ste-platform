@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-ste_platform}
       POSTGRES_USER: ${POSTGRES_USER:-ste_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - ste_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -77,4 +79,3 @@ volumes:
 networks:
   ste_internal:
     driver: bridge
-
