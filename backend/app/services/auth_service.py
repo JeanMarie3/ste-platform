@@ -3,7 +3,7 @@ import hmac
 import os
 
 from app.repositories.sql_store import AuthRepository
-from app.schemas.auth import DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, UserRecord
+from app.schemas.auth import CreateUserRequest, DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, UserRecord
 from app.schemas.common import new_id, utc_now
 
 
@@ -64,6 +64,44 @@ class AuthService:
         salt_hex = os.urandom(16).hex()
         password_hash = _hash_password(payload.new_password, salt_hex)
         self.repository.update_password(user.id, password_hash, salt_hex, utc_now())
+
+    def admin_create_user(self, payload: CreateUserRequest) -> UserPublic:
+        username = payload.username.strip()
+        email = payload.email.strip().lower()
+        role = payload.role.strip().lower()
+
+        if role not in ("admin", "standard"):
+            raise ValueError("Role must be 'admin' or 'standard'")
+
+        if self.repository.get_by_username(username):
+            raise ValueError("Username already exists")
+        if self.repository.get_by_email(email):
+            raise ValueError("Email already exists")
+
+        now = utc_now()
+        salt_hex = os.urandom(16).hex()
+        password_hash = _hash_password(payload.password, salt_hex)
+        item = UserRecord(
+            id=new_id("USR"),
+            username=username,
+            email=email,
+            role=role,
+            created_at=now,
+            updated_at=now,
+            password_hash=password_hash,
+            password_salt=salt_hex,
+        )
+        return self.repository.create(item)
+
+    def admin_delete_user(self, user_id: str) -> None:
+        user = self.repository.get_by_id(user_id)
+        if user is None:
+            raise LookupError("Account not found")
+
+        if user.role == "admin" and self.repository.count_by_role("admin") <= 1:
+            raise ValueError("Cannot delete the last admin account")
+
+        self.repository.delete_by_id(user_id)
 
     def list_users(self) -> list[UserPublic]:
         return self.repository.list()

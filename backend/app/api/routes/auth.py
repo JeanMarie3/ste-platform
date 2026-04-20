@@ -1,11 +1,31 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.auth import AuthMessage, DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, ValidateSessionRequest
+from app.schemas.auth import AuthMessage, CreateUserRequest, DeleteAccountRequest, LoginRequest, ResetPasswordRequest, SignupRequest, UserPublic, ValidateSessionRequest
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 auth_service = AuthService()
 
+@router.get("/users", response_model=list[UserPublic])
+def list_users() -> list[UserPublic]:
+    return auth_service.list_users()
+
+@router.post("/users", response_model=UserPublic)
+def admin_create_user(payload: CreateUserRequest) -> UserPublic:
+    try:
+        return auth_service.admin_create_user(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@router.delete("/users/{user_id}", response_model=AuthMessage)
+def admin_delete_user(user_id: str) -> AuthMessage:
+    try:
+        auth_service.admin_delete_user(user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return AuthMessage(message="User deleted successfully")
 
 @router.post("/signup", response_model=UserPublic)
 def signup(payload: SignupRequest) -> UserPublic:

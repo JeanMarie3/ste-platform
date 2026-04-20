@@ -384,6 +384,14 @@ class AuthRepository:
             ).mappings().first()
         return self._map_record_row(row) if row else None
 
+    def get_by_id(self, user_id: str) -> UserRecord | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                text("SELECT * FROM users WHERE id = :user_id"),
+                {"user_id": user_id},
+            ).mappings().first()
+        return self._map_record_row(row) if row else None
+
     def get_by_email(self, email: str) -> UserRecord | None:
         with get_connection() as connection:
             row = connection.execute(
