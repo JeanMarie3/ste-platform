@@ -2,6 +2,7 @@ param(
     [switch]$NoInstall,
     [switch]$ForceReinstall,
     [switch]$SkipBrowserInstall,
+    [switch]$SkipPostgres,
     [int]$TimeoutSeconds = 90
 )
 
@@ -201,7 +202,7 @@ if ([string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
     Write-Host "Using default DATABASE_URL for local/dev parity: $($env:DATABASE_URL)"
 }
 
-if ($env:DATABASE_URL -match '^postgresql(\+[^:]+)?:') {
+if (-not $SkipPostgres -and $env:DATABASE_URL -match '^postgresql(\+[^:]+)?:') {
     Ensure-PostgresService
 }
 
@@ -252,5 +253,4 @@ Write-Host 'Frontend: http://127.0.0.1:5173'
 Write-Host 'Backend health: http://127.0.0.1:8000/api/v1/health'
 Write-Host 'Agent health: http://127.0.0.1:8010/health'
 Write-Host "Logs and PIDs: $runDir"
-
 
